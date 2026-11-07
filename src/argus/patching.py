@@ -41,7 +41,10 @@ DEFAULTS = {"enabled": False, "day": 1, "time": "03:00", "level": "full", "reboo
             "backup": "", "backup_days": 8, "restore": "",
             # Patched by another tool (Ansible, unattended-upgrades, ...): Argus never
             # patches it, and shows how that tool's job is doing when one is named.
-            "elsewhere": False, "elsewhere_job": ""}
+            "elsewhere": False, "elsewhere_job": "",
+            # The owner's call: this host can be rebuilt, so it is patched without a
+            # backup (decision 12: the owner says what counts as a safety net).
+            "no_backup": False}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS patch_runs (
@@ -171,6 +174,11 @@ class Patching:
         """The host's safety net and what it allows."""
         p = self.plan(host)
         snapshot = (report or {}).get("snapshot") or ""
+        if p["no_backup"]:
+            return {"net": "none, by your choice: it can be rebuilt", "ok": True,
+                    "snapshot": "", "backup": "", "backup_age": None, "fresh": False,
+                    "backup_days": p["backup_days"], "no_backup": True, "restore": "",
+                    "tested_age": None, "tested": False}
         if p["backup"] == GUESTS or (not p["backup"] and (report or {}).get("proxmox")):
             guests = self.guests_net(host, report, p["backup_days"])
             short = [g["name"] or str(g["vmid"]) for g in guests if not g["ok"]]

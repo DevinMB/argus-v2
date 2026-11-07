@@ -300,3 +300,15 @@ def test_guests_backups_do_not_cover_a_host_that_is_not_a_proxmox_server(env):
     enroll(c, csrf, "lab")
     r = c.put("/api/patching/lab", headers=csrf, json={**PLAN, "backup": "pve:guests"})
     assert r.status_code == 422 and "not a Proxmox server" in r.json()["detail"]
+
+
+def test_a_host_the_owner_can_rebuild_is_patched_without_a_backup(env):
+    # Decision 12, amended by Devin (2026-11-07): "for things like this where I
+    # don't care if there's a backup... I'd still like to avoid any vulns".
+    c, csrf, rt, clock = env
+    tok = enroll(c, csrf, "herdr-lab")
+    assert c.post("/api/patching/herdr-lab/now", headers=csrf).status_code == 409
+    r = c.put("/api/patching/herdr-lab", headers=csrf, json={**PLAN, "no_backup": True})
+    assert r.status_code == 200
+    assert r.json()["safety"]["net"] == "none, by your choice: it can be rebuilt"
+    assert report(c, tok, local=TUE_0305)["patch"]["run"]
