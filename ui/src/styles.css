@@ -882,3 +882,28 @@ button.ctable-row:hover { background: var(--raise); }
   .ct-alerts { grid-column: 1; padding-left: 18px; }
   .ct-now { grid-column: 2; grid-row: 1; text-align: right; }
 }
+/* The patch settings: short labelled groups instead of one grid. */
+.pf { gap: 20px; }
+.pf-group { display: grid; gap: 8px; }
+.pf-title { margin: 0; font: 600 11px/1.2 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.pf-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pf-row select, .pf-row input[type="time"], .pf-inline input {
+  background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; padding: 7px 10px;
+  color: var(--text); font: 13px var(--sans); min-width: 0; }
+.pf-row select { min-width: 180px; max-width: 100%; }
+.pf-row select:disabled, .pf-inline input:disabled { opacity: 0.5; }
+.pf-inline { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+.pf-inline input { width: 64px; text-align: center; }
+.pf-note { margin: 0; color: var(--muted); font-size: 12.5px; }
+.pf-hint { margin: 0; color: var(--failing); font-size: 12.5px; }
+.pf-check { display: inline-flex; gap: 8px; align-items: center; font-size: 13.5px; cursor: pointer; }
+.pf-check input { accent-color: var(--accent); width: 15px; height: 15px; }
+.pf-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 8px; }
+.pf-option { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line-strong);
+  border-radius: 8px; cursor: pointer; }
+.pf-option input { margin-top: 3px; accent-color: var(--accent); }
+.pf-option strong { display: block; font-size: 13.5px; }
+.pf-option small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.pf-option:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.pf details.about .pf-row { margin-top: 8px; }
+.pf details.about .pf-note { margin-top: 6px; }

@@ -319,14 +319,15 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
     // A guest whose Proxmox backup Argus can see starts with it chosen; a Proxmox
     // server's safety net is always its guests' backups.
     if (server) return { ...plan, backup: "pve:guests" };
-    return !plan.backup && suggested ? { ...plan, backup: suggested } : plan;
+    return !plan.backup && !plan.no_backup && suggested ? { ...plan, backup: suggested } : plan;
   });
   const [error, setError] = useState(null);
   const set = (k, v) => setP({ ...p, [k]: v });
   const save = async (e) => {
     e.preventDefault();
     try {
-      await send("PUT", `/api/patching/${host.name}`, { ...p, day: Number(p.day) }, session.csrf);
+      // The choice shown is the choice saved: "Argus, every week" means on.
+      await send("PUT", `/api/patching/${host.name}`, { ...p, day: Number(p.day), enabled: !p.elsewhere }, session.csrf);
       onSaved();
     } catch (err) {
       setError(err.message);
@@ -337,79 +338,115 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
   const seen = backups.find((b) => b.ref === suggested);
   const noneSeen = !server && !p.backup && !(seen && seen.at);
   const pick = (w) => setP({ ...p, elsewhere: w === "elsewhere", enabled: w === "argus" });
+  const backupSelect = (
+    <select value={p.backup} onChange={(e) => set("backup", e.target.value)} disabled={p.no_backup} aria-label="Its backup">
+      <option value="">{p.no_backup ? "None needed" : "Choose its backup…"}</option>
+      {backups.length > 0 && (
+        <optgroup label="Proxmox backups">
+          {backups.map((b) => <option key={b.ref} value={b.ref}>{backupLabel(b)}{b.ref === suggested ? " (this host)" : ""}</option>)}
+        </optgroup>
+      )}
+      {refs.length > 0 && (
+        <optgroup label="Jobs and timers that report to Argus">
+          {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
+        </optgroup>
+      )}
+    </select>
+  );
+  const days = (
+    <span className="pf-inline">no older than
+      <input type="number" min="1" max="366" value={p.backup_days} aria-label="Days"
+             onChange={(e) => set("backup_days", Number(e.target.value))} required disabled={p.no_backup} /> days</span>
+  );
   return (
-    <form className="patch-form" onSubmit={save}>
-      <label className="toggle"><input type="radio" checked={who === "argus"} onChange={() => pick("argus")} />
-        <span><strong>Argus patches it every week</strong></span></label>
-      <label className="toggle"><input type="radio" checked={who === "elsewhere"} onChange={() => pick("elsewhere")} />
-        <span><strong>Something else patches it</strong>
-          <small>Ansible, unattended-upgrades, your hypervisor's tools. Argus then never patches it, so two tools never fight over one host.</small></span></label>
-      {who === "elsewhere" && (
-        <label className="field"><span>The job or timer that patches it (optional)</span>
-          <select value={p.elsewhere_job} onChange={(e) => set("elsewhere_job", e.target.value)}>
-            <option value="">None reports to Argus</option>
-            {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
-          </select>
-          <small>Name it and the host card shows how its last run went; a failed or late run already pages.</small>
-        </label>
-      )}
-      {who === "argus" && <>
-      {noneSeen && (
-        <p className="small st-failing">
-          Argus sees no backup of {host.name}.{seen ? " It is a Proxmox guest: add it to a backup job in Proxmox (Datacenter, Backup), and its backup is chosen here after the next run." : " Pick a job or timer that reports to Argus when this host's backup finishes."}
-          {" "}Or, if you could rebuild it, say it needs no backup below.
-        </p>
-      )}
-      <div className="form-grid">
-        <label className="field"><span>Day</span>
-          <select value={p.day} onChange={(e) => set("day", Number(e.target.value))}>
-            {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-          </select></label>
-        <label className="field"><span>Time (the host's clock)</span>
-          <input type="time" value={p.time} onChange={(e) => set("time", e.target.value)} required /></label>
-        <label className="field"><span>Updates</span>
-          <select value={p.level} onChange={(e) => set("level", e.target.value)}>
-            <option value="full">All of them</option>
-            <option value="security">Security only</option>
-          </select></label>
-        <label className="field"><span>{server ? "Its safety net" : "Its backup"}</span>
-          {server ? <span className="field-static">Every guest on it backed up</span> : <select value={p.backup} onChange={(e) => set("backup", e.target.value)} disabled={p.no_backup}>
-            <option value="">None yet</option>
-            {backups.length > 0 && (
-              <optgroup label="Proxmox backups">
-                {backups.map((b) => <option key={b.ref} value={b.ref}>{backupLabel(b)}{b.ref === suggested ? " (this host)" : ""}</option>)}
-              </optgroup>
-            )}
-            {refs.length > 0 && (
-              <optgroup label="Jobs and timers that report to Argus">
-                {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
-              </optgroup>
-            )}
-          </select>}
-          {!server && (
-            <label className="toggle small"><input type="checkbox" checked={!!p.no_backup}
-              onChange={(e) => setP({ ...p, no_backup: e.target.checked, backup: e.target.checked ? "" : p.backup })} />
-              <span>It needs no backup<small>I can rebuild it if an update breaks it. Argus patches it anyway.</small></span></label>
-          )}</label>
-        <label className="field"><span>Recent means (days)</span>
-          <input type="number" min="1" max="366" value={p.backup_days}
-            onChange={(e) => set("backup_days", Number(e.target.value))} required /></label>
-        <label className="field"><span>Its restore test (optional)</span>
-          <select value={p.restore} onChange={(e) => set("restore", e.target.value)}>
-            <option value="">None</option>
-            {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
-          </select></label>
+    <form className="patch-form pf" onSubmit={save}>
+      <div className="pf-group">
+        <h4 className="pf-title">Who patches it</h4>
+        <div className="pf-choice" role="radiogroup">
+          <label className="pf-option"><input type="radio" checked={who === "argus"} onChange={() => pick("argus")} />
+            <span><strong>Argus, every week</strong><small>In a window you choose, one host at a time.</small></span></label>
+          <label className="pf-option"><input type="radio" checked={who === "elsewhere"} onChange={() => pick("elsewhere")} />
+            <span><strong>Something else</strong><small>Ansible, unattended-upgrades, your hypervisor. Argus stays out of its way.</small></span></label>
+        </div>
       </div>
-      {server && <GuestsNet host={host} days={p.backup_days} session={session} reload={reload} />}
-      <details className="about"><summary>How Argus decides a host is safe to patch</summary><p className="muted small">
-        Argus patches a host only when it can be brought back: its backup is more recent than the
-        days you set here, or the host has a ZFS root Argus snapshots first. On Proxmox, add Argus to
-        the Proxmox server too and each guest's vzdump backup shows up here by itself; otherwise
-        pick a job or timer that reports to Argus when your backup finishes. A restore test now
-        and then is how you know the backup works: optional, and encouraged.
-      </p></details>
-      <label className="toggle"><input type="checkbox" checked={p.reboot} onChange={(e) => set("reboot", e.target.checked)} />
-        <span>Reboot when an update needs it</span></label>
+
+      {who === "elsewhere" && (
+        <div className="pf-group">
+          <h4 className="pf-title">The job that patches it</h4>
+          <div className="pf-row">
+            <select value={p.elsewhere_job} onChange={(e) => set("elsewhere_job", e.target.value)} aria-label="Job">
+              <option value="">None reports to Argus</option>
+              {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
+            </select>
+          </div>
+          <p className="pf-note">Optional. Named, the host page shows how its last run went.</p>
+        </div>
+      )}
+
+      {who === "argus" && <>
+        <div className="pf-group">
+          <h4 className="pf-title">When</h4>
+          <div className="pf-row">
+            <select value={p.day} onChange={(e) => set("day", Number(e.target.value))} aria-label="Day">
+              {DAYS.map((d, i) => <option key={d} value={i}>{d}s</option>)}
+            </select>
+            <span className="pf-inline">at</span>
+            <input type="time" value={p.time} onChange={(e) => set("time", e.target.value)} required aria-label="Time" />
+            <span className="pf-note">on the host's own clock</span>
+          </div>
+        </div>
+
+        <div className="pf-group">
+          <h4 className="pf-title">What</h4>
+          <div className="pf-row">
+            <select value={p.level} onChange={(e) => set("level", e.target.value)} aria-label="Updates">
+              <option value="full">All updates</option>
+              <option value="security">Security updates only</option>
+            </select>
+            <label className="pf-check"><input type="checkbox" checked={p.reboot} onChange={(e) => set("reboot", e.target.checked)} />
+              Reboot when an update needs it</label>
+          </div>
+        </div>
+
+        <div className="pf-group">
+          <h4 className="pf-title">Safety net</h4>
+          {server ? (
+            <>
+              <div className="pf-row"><span>Every guest on it backed up,</span>{days}</div>
+              <GuestsNet host={host} days={p.backup_days} session={session} reload={reload} />
+            </>
+          ) : (
+            <>
+              <div className="pf-row">{backupSelect}{days}</div>
+              <label className="pf-check"><input type="checkbox" checked={!!p.no_backup}
+                onChange={(e) => setP({ ...p, no_backup: e.target.checked, backup: e.target.checked ? "" : p.backup })} />
+                It needs no backup: I could rebuild it</label>
+              {noneSeen && !p.no_backup && (
+                <p className="pf-hint">
+                  Argus sees no backup of {host.name}. {seen ? "Add it to a backup job in Proxmox (Datacenter, Backup); it is chosen here after the next run." : "Pick a job or timer that reports when its backup finishes."}
+                </p>
+              )}
+              {!p.no_backup && (
+                <details className="about">
+                  <summary>Restore test (optional){p.restore ? `: ${p.restore.replace(":", ": ")}` : ""}</summary>
+                  <div className="pf-row">
+                    <select value={p.restore} onChange={(e) => set("restore", e.target.value)} aria-label="Restore test">
+                      <option value="">None</option>
+                      {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
+                    </select>
+                  </div>
+                  <p className="pf-note">A job that proves the backup restores. Argus nudges you when none ran in 35 days.</p>
+                </details>
+              )}
+            </>
+          )}
+          <details className="about"><summary>How Argus decides a host is safe to patch</summary><p className="muted small">
+            Argus patches a host only when it can be brought back: its backup is more recent than the
+            days you set, or it has a ZFS root Argus snapshots first, or you said it needs no backup.
+            A Proxmox guest's own vzdump backup counts by itself; otherwise pick a job or timer that
+            reports to Argus when your backup finishes.
+          </p></details>
+        </div>
       </>}
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="actions">
@@ -550,6 +587,13 @@ function backupTone(g, now = Date.now() / 1000) {
   return !g.backup ? "failing" : now - g.backup.at < 8 * 86400 ? "up" : "failing";
 }
 
+// A guest's missing or old backup: nothing once the owner said it needs none,
+// a warning when it holds back a patch plan that is on, a quiet note otherwise.
+function backupTag(host, guest) {
+  if (!guest || backupTone(guest) === "up" || host.patching?.plan?.no_backup) return [];
+  return [[host.patching?.plan?.enabled ? "failing" : "unknown", backupText(guest)]];
+}
+
 function Tags({ items, empty = "all good" }) {
   if (!items.length) return <span className="tag tag-ok">{empty}</span>;
   return <span className="tags">{items.map(([tone, text]) => <span key={text} className={`tag tag-${tone}`}>{text}</span>)}</span>;
@@ -572,10 +616,11 @@ function HostRow({ host, guest, child, toggle }) {
           <strong>{host.name}</strong><span className="muted small">{hostSub(host, guest)}</span></a>
       </span>
       <span className="fleet-tags">
-        <Tags items={[...attention(host), ...(guest && backupTone(guest) !== "up" ? [["failing", backupText(guest)]] : [])]} /></span>
+        <Tags items={[...attention(host), ...backupTag(host, guest)]} /></span>
       <span className="fleet-patch small">
         <span className={`st-${ptone}`}>{ptext}</span>
-        {guest?.backup && backupTone(guest) === "up" && <span className="muted">backup {agoText(Date.now() / 1000 - guest.backup.at)}</span>}
+        {host.patching?.plan?.no_backup ? <span className="muted">no backup needed</span>
+          : guest?.backup && backupTone(guest) === "up" && <span className="muted">backup {agoText(Date.now() / 1000 - guest.backup.at)}</span>}
       </span>
       <span className="fleet-seen small muted">{host.last_seen ? agoText(host.age) : "waiting"}</span>
       <a className="fleet-go" href={`#/hosts?host=${encodeURIComponent(host.name)}`} aria-label={`Open ${host.name}`}>›</a>
