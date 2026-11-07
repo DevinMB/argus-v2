@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { send } from "../api.js";
+import SecretField from "./SecretField.jsx";
 import { agoText, safeHref } from "../lib.js";
 
 // GitHub app names are unique across GitHub ("Argus" is taken), so the default
@@ -75,16 +76,16 @@ function Connect({ session, setError }) {
 }
 
 function PasteToken({ session, view, onView, setError }) {
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const save = async (value) => {
     setBusy(true);
     setError(null);
     try {
       onView(await send("PUT", "/api/github", { token: value }, session.csrf));
-      setToken("");
+      return true;
     } catch (err) {
       setError(err.message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -97,13 +98,8 @@ function PasteToken({ session, view, onView, setError }) {
         tokens. Choose the repos, and give it read-only access to Actions, Contents, Dependabot
         alerts, Metadata and Pull requests. Argus keeps it encrypted and never shows it again.
       </p>
-      <form onSubmit={(e) => { e.preventDefault(); save(token); }} className="field-row">
-        <input type="password" value={token} onChange={(e) => setToken(e.target.value.trim())}
-               placeholder={view.token_set ? "saved; paste a new one to replace it" : "github_pat_…"}
-               aria-label="GitHub token" autoComplete="off" required />
-        <button className="btn" disabled={busy}>Save</button>
-        {view.token_set && <button className="btn" type="button" disabled={busy} onClick={() => save("")}>Remove</button>}
-      </form>
+      <SecretField label="GitHub token" saved={view.token_set} placeholder="github_pat_…" busy={busy}
+                   onSave={save} onRemove={() => save("")} />
     </details>
   );
 }
@@ -147,18 +143,16 @@ function Repos({ session, view, onView, setError }) {
 // Where deploys come from: one repo with hosts/<host> files listing stack folders.
 function Deploys({ session, view, setError }) {
   const [d, setD] = useState(null);
-  const [token, setToken] = useState("");
-  const [write, setWrite] = useState("");
   useEffect(() => { send("GET", "/api/deploys").then(setD, (e) => setError(e.message)); }, [setError]);
   if (!d) return null;
   const save = async (body) => {
     setError(null);
     try {
       setD(await send("PUT", "/api/deploys", body, session.csrf));
-      setToken("");
-      setWrite("");
+      return true;
     } catch (e) {
       setError(e.message);
+      return false;
     }
   };
   const folder = d.source?.kind === "folder";
@@ -191,38 +185,18 @@ function Deploys({ session, view, setError }) {
         </p>
       )}
       {!folder && d.repo && (
-        <form className="field" onSubmit={(e) => { e.preventDefault(); save({ write_token: write }); }}>
-          <span>Tag bumps</span>
-          <small>
-            When an app's main build is green, Argus writes its new image tag into {d.repo}, and the
-            hosts deploy it. That needs a fine-grained token for <strong>{d.repo} only</strong>, with
-            Contents: read and write. Argus's app stays read-only everywhere else.
-          </small>
-          <div className="field-row">
-            <input type="password" value={write} onChange={(e) => setWrite(e.target.value.trim())} autoComplete="off"
-                   placeholder={d.write_token_set ? "saved; paste a new one to replace it" : "github_pat_…"}
-                   aria-label="Deploy repo write token" />
-            <button className="btn" disabled={!write}>Save</button>
-            {d.write_token_set && <button className="btn" type="button" onClick={() => save({ write_token: "" })}>Remove</button>}
-          </div>
-          {!d.write_token_set && <small className="st-failing">Off: tags are not bumped until a token is saved.</small>}
-        </form>
+        <>
+          <SecretField label="Write token (tag bumps and moving stacks in)" saved={d.write_token_set} placeholder="github_pat_…"
+                       onSave={(v) => save({ write_token: v })} onRemove={() => save({ write_token: "" })}
+                       help={<>A fine-grained token for <strong>{d.repo} only</strong>, with Contents: read and write. Argus writes new
+                         image tags and moved-in stacks there; its GitHub app stays read-only everywhere else.</>} />
+          {!d.write_token_set && <p className="small st-failing">Off: tags are not bumped and stacks cannot move in until a token is saved.</p>}
+        </>
       )}
-      <form className="field" onSubmit={(e) => { e.preventDefault(); save({ pull_token: token }); }}>
-        <span>Private images</span>
-        <small>
-          {view.source === "app"
-            ? "Hosts pull with a short-lived token from the app. If the registry refuses it, save a read token here instead."
-            : "Hosts pull with this token, sent only with a deploy and never stored on the host."}{" "}
-          A classic token with only <code>read:packages</code>.
-        </small>
-        <div className="field-row">
-          <input type="password" value={token} onChange={(e) => setToken(e.target.value.trim())} autoComplete="off"
-                 placeholder={d.pull_token_set ? "saved; paste a new one to replace it" : "ghp_…"} aria-label="Registry read token" />
-          <button className="btn" disabled={!token}>Save</button>
-          {d.pull_token_set && <button className="btn" type="button" onClick={() => save({ pull_token: "" })}>Remove</button>}
-        </div>
-      </form>
+      <SecretField label="Read token for private images" saved={d.pull_token_set} placeholder="ghp_…"
+                   onSave={(v) => save({ pull_token: v })} onRemove={() => save({ pull_token: "" })}
+                   help={<>Needed when your images are private (ghcr.io/you/…): hosts pull with it, sent only with a deploy and
+                     never stored on the host. A classic token with only <code>read:packages</code>.</>} />
     </div>
   );
 }

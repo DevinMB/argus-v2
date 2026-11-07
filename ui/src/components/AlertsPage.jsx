@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAlerts, send } from "../api.js";
+import SecretField from "./SecretField.jsx";
 import { REPEATS, agoText } from "../lib.js";
 
 const SENDERS = {
@@ -235,10 +236,9 @@ function LinkField({ view, act }) {
 }
 
 function Watcher({ view, act, busy, say }) {
-  const [url, setUrl] = useState("");
   const w = view.watch;
   const save = (value) => act("watch", "PUT", "/api/alerts", { watch_url: value },
-    value ? "Saved. Argus pings it every minute." : "Removed.").then((r) => r && setUrl(""));
+    value ? "Saved. Argus pings it every minute." : "Removed.").then((r) => !!r);
   return (
     <div className="panel">
       <h2 className="eyebrow">Who watches Argus</h2>
@@ -250,16 +250,8 @@ function Watcher({ view, act, busy, say }) {
       {!w.url_set && view.sender === "argus" && (
         <p className="banner banner-warn">Nothing watches Argus yet.</p>
       )}
-      <label className="field">
-        <span>Ping URL</span>
-        <span className="field-row">
-          <input type="password" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off"
-                 placeholder={w.url_set ? "Saved. Paste a new one to replace it." : "https://hc-ping.com/..."} />
-          <button className="btn" disabled={!url || busy === "watch"} onClick={() => save(url)}>Save</button>
-          {w.url_set && <button className="btn" disabled={busy === "watch"} onClick={() => save("")}>Remove</button>}
-        </span>
-        <small>Kept encrypted: the URL is the key to your check.</small>
-      </label>
+      <SecretField label="Ping URL" saved={w.url_set} placeholder="https://hc-ping.com/..." busy={busy === "watch"}
+                   onSave={(v) => save(v)} onRemove={() => save("")} help="Kept encrypted: the URL is the key to your check." />
       {w.error && (!w.ok_at || w.error_at > w.ok_at) ? (
         <p className="form-error">Last ping failed {since(view, w.error_at)}: {w.error}</p>
       ) : w.ok_at ? (
