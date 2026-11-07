@@ -214,6 +214,10 @@ class Companions:
         row = self.db.execute("SELECT report FROM companions WHERE name = ?", (name,)).fetchone()
         return json.loads(row[0]) if row and row[0] else None
 
+    def ignored_of(self, name: str) -> list[str]:
+        row = self.db.execute("SELECT ignored FROM companions WHERE name = ?", (name,)).fetchone()
+        return json.loads(row[0]) if row else []
+
     def names(self) -> set[str]:
         return {r[0] for r in self.db.execute("SELECT name FROM companions")}
 

@@ -537,3 +537,15 @@ export function installHelp(output = "", guest = {}, origin = globalThis.locatio
   }
   return { title: "Adding Argus failed", manual: true, steps: ["The output below says what went wrong. Try again, or add Argus by hand."] };
 }
+
+// A Proxmox server is patched only when every guest on it has a recent backup.
+// Guests left out of backups on purpose (a model cache, say) can be marked so.
+export function guestsNet(host, days, now = Date.now() / 1000) {
+  const ignored = host.ignored ?? [];
+  return (host.report?.proxmox?.guests ?? []).map((g) => {
+    const age = g.backup ? now - g.backup.at : null;
+    const exempt = ignored.includes(`nobackup:${g.vmid}`);
+    return { ...g, age, exempt, ok: exempt || (age !== null && age < days * 86400) };
+  });
+}
+

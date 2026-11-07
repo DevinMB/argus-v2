@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { send } from "../api.js";
 import Adopt from "./Adopt.jsx";
-import { agoText, attention, backupLabel, bytes, containerTrouble, diskTone, guestHostName, hostSentence, hostSub, hostTree, installHelp, patchLabel, sortContainers } from "../lib.js";
+import { agoText, attention, backupLabel, bytes, containerTrouble, diskTone, guestHostName, hostSentence, hostSub, hostTree, guestsNet, installHelp, patchLabel, sortContainers } from "../lib.js";
 
 const STATUS = { ok: ["up", "reporting"], quiet: ["down", "gone quiet"], waiting: ["unknown", "waiting"] };
 const FIRST_CONTAINERS = 8;
@@ -272,11 +272,53 @@ function Stacks({ stacks, session, reload }) {
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const RUN_TONE = { ok: "up", failed: "down", running: "accent", granted: "accent", rebooting: "accent" };
 
-function PatchForm({ host, session, refs, backups, onSaved, onCancel }) {
+function GuestsNet({ host, days, session, reload }) {
+  const [error, setError] = useState(null);
+  const guests = guestsNet(host, days);
+  const short = guests.filter((g) => !g.ok);
+  const exempt = guests.filter((g) => g.exempt);
+  const mark = async (g, on) => {
+    try {
+      await send("PUT", `/api/companions/${host.id}/ignored`, { container: `nobackup:${g.vmid}`, ignored: on }, session.csrf);
+      reload?.();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+  return (
+    <div className="guests-net">
+      <p className={`small ${short.length ? "st-failing" : "st-up"}`}>
+        {short.length === 0 ? `All ${guests.length - exempt.length} guests have a backup from the last ${days} days.`
+          : `${short.length} of ${guests.length} guests have no backup from the last ${days} days, so Argus will not patch this server yet:`}
+      </p>
+      {(short.length > 0 || exempt.length > 0) && (
+        <ul className="rows">{[...short, ...exempt.filter((g) => g.ok)].map((g) => (
+          <li key={g.vmid}>
+            <span className={`dot dot-${g.ok ? "hollow" : "failing"}`} />
+            <span className="row-main">{g.name || g.vmid} <span className="muted mono">{g.type === "lxc" ? "CT" : "VM"} {g.vmid}</span>
+              <span className="row-sub muted">{g.exempt ? "needs no backup" : g.age === null ? "no backup this server can see" : `backed up ${agoText(g.age)}`}</span></span>
+            <span className="row-note" />
+            <span className="row-act">{session?.signed_in && (
+              <button type="button" className="btn btn-small btn-ghost" onClick={() => mark(g, !g.exempt)}
+                      title="Left out of backups on purpose: it does not hold the server back">
+                {g.exempt ? "Count it again" : "It needs no backup"}</button>
+            )}</span>
+          </li>
+        ))}</ul>
+      )}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) {
   const suggested = host.patching.suggested_backup;
+  const server = !!host.report?.proxmox;
   const [p, setP] = useState(() => {
     const plan = host.patching.plan;
-    // A guest whose Proxmox backup Argus can see starts with it chosen.
+    // A guest whose Proxmox backup Argus can see starts with it chosen; a Proxmox
+    // server's safety net is always its guests' backups.
+    if (server) return { ...plan, backup: "pve:guests" };
     return !plan.backup && suggested ? { ...plan, backup: suggested } : plan;
   });
   const [error, setError] = useState(null);
@@ -321,8 +363,8 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel }) {
             <option value="full">All of them</option>
             <option value="security">Security only</option>
           </select></label>
-        <label className="field"><span>Its backup</span>
-          <select value={p.backup} onChange={(e) => set("backup", e.target.value)}>
+        <label className="field"><span>{server ? "Its safety net" : "Its backup"}</span>
+          {server ? <span className="field-static">Every guest on it backed up</span> : <select value={p.backup} onChange={(e) => set("backup", e.target.value)}>
             <option value="">None yet</option>
             {backups.length > 0 && (
               <optgroup label="Proxmox backups">
@@ -334,7 +376,7 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel }) {
                 {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
               </optgroup>
             )}
-          </select></label>
+          </select>}</label>
         <label className="field"><span>Recent means (days)</span>
           <input type="number" min="1" max="366" value={p.backup_days}
             onChange={(e) => set("backup_days", Number(e.target.value))} required /></label>
@@ -344,6 +386,7 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel }) {
             {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
           </select></label>
       </div>
+      {server && <GuestsNet host={host} days={p.backup_days} session={session} reload={reload} />}
       <details className="about"><summary>How Argus decides a host is safe to patch</summary><p className="muted small">
         Argus patches a host only when it can be brought back: its backup is more recent than the
         days you set here, or the host has a ZFS root Argus snapshots first. On Proxmox, add Argus to
@@ -396,6 +439,7 @@ function Patching({ host, session, refs, backups, reload }) {
           {pt.plan.enabled && !pt.plan.restore && <span className="muted"> Never restore-tested: worth a try.</span>}
         </p>
       )}
+      {host.report?.proxmox && !editing && <GuestsNet host={host} days={pt.plan.backup_days || 8} session={session} reload={reload} />}
       {pt.skipped && <p className="small st-failing">Not patched: {pt.skipped}.</p>}
       {last && (
         <p className="small">
@@ -416,7 +460,7 @@ function Patching({ host, session, refs, backups, reload }) {
           )}
         </div>
       )}
-      {editing && <PatchForm host={host} session={session} refs={refs} backups={backups}
+      {editing && <PatchForm host={host} session={session} refs={refs} backups={backups} reload={reload}
                              onSaved={() => { setEditing(false); reload(); }} onCancel={() => setEditing(false)} />}
       {error && <p className="form-error" role="alert">{error}</p>}
     </section>
@@ -915,10 +959,157 @@ function HostDetail({ host, tab, session, reload, refs, backups, hostNames, sugg
   );
 }
 
+// The Patching view: every host's patching in one place. Guests share one plan,
+// Proxmox servers each get their own day, and hosts without a backup Argus can
+// see are listed with what to do.
+function PatchPlan({ hosts, backups, session, reload }) {
+  const [plan, setPlan] = useState({ day: 0, time: "03:00", level: "full", reboot: true, backup_days: 8 });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [error, setError] = useState(null);
+  const servers = hosts.filter((h) => h.report?.proxmox);
+  const guests = hosts.filter((h) => !h.report?.proxmox && h.patching?.suggested_backup?.startsWith("pve:"));
+  const others = hosts.filter((h) => !servers.includes(h) && !guests.includes(h));
+  const state = (h) => {
+    const pt = h.patching;
+    if (h.read_only) return ["unknown", "monitoring only"];
+    if (pt.plan.elsewhere) return ["unknown", "patched by something else"];
+    if (pt.plan.enabled) return pt.safety.ok ? ["up", `${DAYS[pt.plan.day]}s ${pt.plan.time}`] : ["failing", `on, but ${pt.safety.net}`];
+    return ["unknown", "off"];
+  };
+  const backupOf = (h) => backups.find((b) => b.ref === h.patching.suggested_backup);
+  const recent = (h) => { const b = backupOf(h); return b?.at && Date.now() / 1000 - b.at < plan.backup_days * 86400; };
+  const ready = guests.filter((h) => !h.read_only && !h.patching.plan.enabled && !h.patching.plan.elsewhere && recent(h));
+  const noBackup = guests.filter((h) => !h.patching.plan.enabled && !h.patching.plan.elsewhere && !recent(h));
+  const put = (h, body) => send("PUT", `/api/patching/${h.name}`, {
+    enabled: true, elsewhere: false, elsewhere_job: "", restore: h.patching.plan.restore || "", ...body }, session.csrf);
+  const turnOn = async () => {
+    setBusy(true); setError(null); setMsg(null);
+    let n = 0;
+    for (const h of ready) {
+      try { await put(h, { ...plan, day: Number(plan.day), backup: h.patching.suggested_backup }); n++; }
+      catch (e) { setError(`${h.name}: ${e.message}`); }
+    }
+    setMsg(`${n} guest${n === 1 ? "" : "s"} now patched on ${DAYS[plan.day]}s from ${plan.time}.`);
+    setBusy(false);
+    reload();
+  };
+  // The server Argus runs on goes last: if its update goes wrong, the other was fine.
+  const argusHome = servers.find((s) => s.report.proxmox.guests.some((g) => guestHostName(g.name || "") === "argus"));
+  const firsts = servers.filter((s) => s !== argusHome);
+  const serverDay = (s) => (s === argusHome ? 3 : [1, 2, 4, 5][firsts.indexOf(s)] ?? 1);
+  const set = (k) => (e) => setPlan({ ...plan, [k]: k === "day" || k === "backup_days" ? Number(e.target.value) : e.target.value });
+  return (
+    <div className="patch-plan">
+      <Section title={`guests (${guests.length})`}
+        about="Each guest is patched with all its updates and rebooted when an update needs it, one guest at a time, only when its Proxmox backup is recent. Change any one guest on its own page.">
+        <p className="small">One plan for every guest. Its backup is the one its Proxmox server makes, found for you.</p>
+        <div className="form-grid">
+          <label className="field"><span>Day</span>
+            <select value={plan.day} onChange={set("day")}>{DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}</select></label>
+          <label className="field"><span>From (each host's clock)</span>
+            <input type="time" value={plan.time} onChange={set("time")} required /></label>
+          <label className="field"><span>Updates</span>
+            <select value={plan.level} onChange={set("level")}><option value="full">All of them</option><option value="security">Security only</option></select></label>
+          <label className="field"><span>Backup no older than (days)</span>
+            <input type="number" min="1" max="366" value={plan.backup_days} onChange={set("backup_days")} /></label>
+        </div>
+        <label className="toggle"><input type="checkbox" checked={plan.reboot} onChange={(e) => setPlan({ ...plan, reboot: e.target.checked })} />
+          <span>Reboot when an update needs it</span></label>
+        {session?.signed_in && (
+          <div className="actions">
+            <button className="btn btn-primary" disabled={busy || ready.length === 0} onClick={turnOn}>
+              {ready.length ? `Turn on for ${ready.length} guest${ready.length === 1 ? "" : "s"}` : "Every guest has a plan"}</button>
+            <span className="muted small">Guests that already have a plan keep it.</span>
+          </div>
+        )}
+        {noBackup.length > 0 && (
+          <p className="small st-failing">
+            Not included, no backup from the last {plan.backup_days} days: {noBackup.map((h) => h.name).join(", ")}.
+            Add them to a backup job in Proxmox (Datacenter, Backup), and they are ready after its next run.
+          </p>
+        )}
+        {msg && <p className="form-ok small" role="status">{msg}</p>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <ul className="rows">{guests.map((h) => {
+          const [tone, text] = state(h);
+          const b = backupOf(h);
+          return (
+            <li key={h.id}><span className={`dot dot-${tone === "unknown" ? (recent(h) ? "hollow" : "failing") : tone}`} />
+              <span className="row-main"><a href={`#/hosts?host=${encodeURIComponent(h.name)}&tab=patching`}>{h.name}</a>
+                <span className="row-sub muted">{b?.at ? `backed up ${agoText(Date.now() / 1000 - b.at)} by ${b.server}` : `no backup on ${b?.server ?? "its server"}`}</span></span>
+              <span className={`row-note st-${tone}`}>{text}</span><span className="row-act" /></li>
+          );
+        })}</ul>
+      </Section>
+
+      {servers.length > 0 && (
+        <Section title={`proxmox servers (${servers.length})`}
+          about="A server's update can need a reboot, which restarts every guest on it. So a server is patched only when every guest on it has a recent backup (if it breaks, you reinstall Proxmox and restore them), one server at a time, never while another server's last run failed, and on its own day, away from the guests'. Proxmox keeps the previous kernel, so a bad one is undone from the boot menu. Major versions (9 to 10) stay manual.">
+          {[...firsts, ...(argusHome ? [argusHome] : [])].map((s) => (
+            <ServerPlan key={s.id} host={s} session={session} reload={reload} put={put}
+                        defaultDay={serverDay(s)} last={s === argusHome} state={state(s)} />))}
+        </Section>
+      )}
+
+      {others.length > 0 && (
+        <Section title={`other hosts (${others.length})`}
+          about="Argus cannot see a backup for these. If something backs them up (a VM snapshot, a backup job), have it report to Argus with a heartbeat or job, then link it on the host's Patching tab. A host with a ZFS root is snapshotted by Argus before each run.">
+          <ul className="rows">{others.map((h) => {
+            const [tone, text] = state(h);
+            return (
+              <li key={h.id}><span className={`dot dot-${tone === "unknown" ? "hollow" : tone}`} />
+                <span className="row-main">{h.name}<span className="row-sub muted">{h.patching?.safety?.net}</span></span>
+                <span className={`row-note st-${tone}`}>{text}</span>
+                <span className="row-act"><a className="btn btn-small" href={`#/hosts?host=${encodeURIComponent(h.name)}&tab=patching`}>Set up</a></span></li>
+            );
+          })}</ul>
+        </Section>
+      )}
+    </div>
+  );
+}
+
+function ServerPlan({ host, session, reload, put, defaultDay, last, state }) {
+  const pt = host.patching.plan;
+  const [day, setDay] = useState(pt.enabled ? pt.day : defaultDay);
+  const [time, setTime] = useState(pt.enabled ? pt.time : "03:00");
+  const [error, setError] = useState(null);
+  const [tone, text] = state;
+  const save = async (on) => {
+    setError(null);
+    try {
+      await put(host, { enabled: on, day: Number(day), time, level: "full", reboot: true,
+                        backup: "pve:guests", backup_days: pt.backup_days || 8 });
+      reload();
+    } catch (e) { setError(e.message); }
+  };
+  return (
+    <div className="server-plan">
+      <div className="server-plan-head">
+        <a href={`#/hosts?host=${encodeURIComponent(host.name)}&tab=patching`}><strong>{host.name}</strong></a>
+        <span className={`small st-${tone}`}>{text}</span>
+        {last && <span className="muted small">Argus runs here: patched last</span>}
+      </div>
+      <GuestsNet host={host} days={pt.backup_days || 8} session={session} reload={reload} />
+      {session?.signed_in && !host.read_only && (
+        <div className="inline-form">
+          <select value={day} onChange={(e) => setDay(Number(e.target.value))} aria-label="Day">
+            {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}</select>
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time" />
+          <button className="btn btn-small btn-primary" onClick={() => save(true)}>{pt.enabled ? "Save" : "Turn on"}</button>
+          {pt.enabled && <button className="btn btn-small" onClick={() => save(false)}>Turn off</button>}
+        </div>
+      )}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function useHostRoute() {
   const read = () => {
     const q = new URLSearchParams((window.location.hash.split("?")[1]) ?? "");
-    return { name: q.get("host"), tab: q.get("tab"), add: q.get("add") };
+    return { name: q.get("host"), tab: q.get("tab"), add: q.get("add"), view: q.get("view") };
   };
   const [route, setRoute] = useState(read);
   useEffect(() => {
@@ -973,7 +1164,15 @@ export default function Hosts({ data, session, reload, start, refs = [] }) {
           added here yet. Those checks wait until {data.unknown.length === 1 ? "it reports" : "they report"}.
         </p>
       )}
-      {hosts.length > 0 && <HostList hosts={hosts} session={session} reload={reload} />}
+      {hosts.length > 0 && (
+        <nav className="subtabs hd-tabs">
+          <a href="#/hosts" aria-current={route.view !== "patching" ? "page" : undefined}>All hosts</a>
+          <a href="#/hosts?view=patching" aria-current={route.view === "patching" ? "page" : undefined}>Patching</a>
+        </nav>
+      )}
+      {hosts.length > 0 && (route.view === "patching"
+        ? <PatchPlan hosts={hosts} backups={backups} session={session} reload={reload} />
+        : <HostList hosts={hosts} session={session} reload={reload} />)}
     </section>
   );
 }

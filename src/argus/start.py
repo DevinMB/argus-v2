@@ -109,7 +109,7 @@ def view(*, rt, alerts: dict, gh_connected: bool, deploy_views: list[dict],
                 "Proxmox, add Argus to the Proxmox server and each guest's backup is "
                 "found for you. "
                 "Already patched by something else? Say so on the host's card.",
-         "href": "#/hosts", "action": "Choose a window"},
+         "href": "#/hosts?view=patching", "action": "Choose a window"},
         {"key": "github", "done": gh_connected,
          "title": "Connect GitHub",
          "why": "See each app's updates on their way: Dependabot's PRs, CI, merges and builds.",

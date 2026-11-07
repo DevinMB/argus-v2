@@ -199,7 +199,7 @@ def test_a_proxmox_guest_uses_the_backup_its_server_sees(env):
     assert [b["ref"] for b in body["backups"]] == ["pve:pve1/101", "pve:pve1/102"]
     views = {v["name"]: v["patching"] for v in body["companions"]}
     assert views["shop"]["suggested_backup"] == "pve:pve1/101"
-    assert views["pve1"]["suggested_backup"] == ""  # a server is not its own guest
+    assert views["pve1"]["suggested_backup"] == "pve:guests"  # a server's net is its guests
     v = c.put("/api/patching/shop", headers=csrf, json={**PLAN, "backup": "pve:pve1/101"}).json()
     assert v["safety"]["net"] == "a recent backup"
     assert "patch" in report(c, shop, local=TUE_0305)
@@ -239,3 +239,64 @@ def test_renaming_a_host_keeps_its_plan_runs_and_guest_backups(env):
     assert report(c, tok)  # the same token, nothing to change on the host
     assert c.put("/api/companions/nope/name", headers=csrf,
                  json={"name": "x"}).status_code == 404
+
+
+def pve_report(clock, ages):
+    """A Proxmox server's reading: guest vmid -> backup age in days (None: no backup)."""
+    return {"node": "pve", "guests": [
+        {"vmid": v, "name": f"g{v}", "type": "lxc", "status": "running",
+         **({"backup": {"at": clock.now - d * 86400, "storage": "nas"}} if d is not None else {})}
+        for v, d in ages.items()]}
+
+
+def test_a_proxmox_server_is_patched_only_when_every_guest_is_backed_up(env):
+    c, csrf, rt, clock = env
+    pve = enroll(c, csrf, "pve")
+    px = pve_report(clock, {101: 2, 102: None})
+    report(c, pve, kernel="7.0-pve", proxmox=px)
+    host = c.get("/api/companions").json()["companions"][0]
+    assert host["patching"]["suggested_backup"] == "pve:guests"
+    assert c.put("/api/patching/pve", headers=csrf,
+                 json={**PLAN, "backup": "pve:guests"}).status_code == 200
+    assert "patch" not in report(c, pve, kernel="7.0-pve", proxmox=px, local=TUE_0305)
+    view = c.get("/api/companions").json()["companions"][0]["patching"]
+    assert view["safety"]["net"] == "1 guest without a recent backup: g102"
+    assert view["skipped"].startswith("1 guest without a recent backup")
+    # Ollama-style: excluded from backups on purpose, and the owner says so.
+    cid = c.get("/api/companions").json()["companions"][0]["id"]
+    c.put(f"/api/companions/{cid}/ignored", headers=csrf, json={"container": "nobackup:102",
+                                                                 "ignored": True})
+    assert report(c, pve, kernel="7.0-pve", proxmox=px, local=TUE_0305)["patch"]["run"]
+
+
+def test_one_proxmox_server_waits_while_the_others_last_run_failed(env):
+    c, csrf, rt, clock = env
+    a, b = enroll(c, csrf, "pve-a"), enroll(c, csrf, "pve-b")
+    px = pve_report(clock, {101: 1})
+    for tok, name in ((a, "pve-a"), (b, "pve-b")):
+        report(c, tok, proxmox=px)
+        c.put(f"/api/patching/{name}", headers=csrf, json={**PLAN, "backup": "pve:guests"})
+    run = report(c, a, proxmox=px, local=TUE_0305)["patch"]
+    report(c, a, proxmox=px, local=TUE_0305, patch={"run": run["run"], "state": "failed",
+                                                     "summary": "grub broke"})
+    assert "patch" not in report(c, b, proxmox=px, local=TUE_0305)
+    hosts = {h["name"]: h for h in c.get("/api/companions").json()["companions"]}
+    assert "pve-a, another Proxmox server, failed" in hosts["pve-b"]["patching"]["skipped"]
+
+
+def test_a_guest_that_never_got_its_turn_says_so(env):
+    c, csrf, rt, clock = env
+    tok = enroll(c, csrf, "lab")
+    c.put("/api/patching/lab", headers=csrf, json={**PLAN, "backup": "job:nas-backup"})
+    job_ok(c, rt, clock, "nas-backup")
+    late = {**TUE_0305, "time": "09:30"}  # the window (03:00 + 6 h) is over
+    assert "patch" not in report(c, tok, local=late)
+    view = c.get("/api/companions").json()["companions"][0]["patching"]
+    assert "window ended before its turn" in view["skipped"]
+
+
+def test_guests_backups_do_not_cover_a_host_that_is_not_a_proxmox_server(env):
+    c, csrf, rt, clock = env
+    enroll(c, csrf, "lab")
+    r = c.put("/api/patching/lab", headers=csrf, json={**PLAN, "backup": "pve:guests"})
+    assert r.status_code == 422 and "not a Proxmox server" in r.json()["detail"]
