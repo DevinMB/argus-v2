@@ -1,76 +1,44 @@
-import { ago, agoText, groupChecks, isPublic, ms, siteName, summarize } from "../lib.js";
+import { ago, agoText, isPublic, siteName } from "../lib.js";
 
-const LABEL = { up: "Up", failing: "Failing", down: "Down", unknown: "Waiting", paused: "Paused" };
+const LABEL = { up: "up", failing: "failing", down: "down", unknown: "waiting", paused: "paused" };
+const RANK = { down: 0, failing: 1, unknown: 2, paused: 3, up: 4 };
 
-// A check with something to say gets the full tile: target, error, tags, timing.
-function Cell({ c, now, sites, onPick }) {
-  return (
-    <button className={`cell cell-${c.status}`} onClick={() => onPick(c.name)}>
-      <div className="cell-top">
-        <span className={`dot dot-${c.status}`} aria-hidden="true" />
-        <span className="cell-name">{c.name}</span>
-        <span className={`cell-status st-${c.status}`}>{LABEL[c.status] ?? c.status}</span>
-      </div>
-      <div className="cell-target" title={c.target}>{c.target}</div>
-      {c.paused
-        ? <div className="cell-paused-why">{c.paused.reason || "Paused"}{c.paused.until === "up" ? "; resumes when it is back up" : ""}</div>
-        : c.last_error && <div className="cell-error">{c.last_error}</div>}
-      <div className="chips">
-        <span className="chip">{c.kind}</span>
-        {c.severity === "critical" && <span className="chip chip-critical">pages</span>}
-        {isPublic(c) && <span className="chip chip-public" title="Reached from the internet">public</span>}
-        {Object.keys(sites ?? {}).length > 1 && <span className="chip">{siteName(sites, c.site)}</span>}
-      </div>
-      <div className="cell-foot">
-        {c.paused ? <span>paused {agoText(now - c.paused.since)} · now {c.probe_status}</span> : <>
-          <span>{c.last_change ? `since ${ago(now - c.last_change)}` : "no result yet"}</span>
-          <span>{ms(c.last_duration)}</span>
-          {c.consecutive_failures > 0 && <span className="warn">{c.consecutive_failures} failed</span>}
-        </>}
-      </div>
-    </button>
-  );
-}
-
-// A healthy check is one line: what it is and that it is fine. The drawer has the rest.
-function Row({ c, onPick }) {
-  return (
-    <button className="crow" onClick={() => onPick(c.name)} title={c.description || c.target}>
-      <span className="dot dot-up" aria-hidden="true" />
-      <span className="crow-name">{c.name}</span>
-      {c.severity === "critical" && <span className="crow-pages" title="Pages if down">pages</span>}
-      <span className="crow-target">{c.target.replace(/^https?:\/\//, "")}</span>
-    </button>
-  );
-}
-
-export default function CheckGrid({ checks, now, sites, groups = {}, onPick }) {
+// Every check on one table, problems first: what it probes, whether it alerts
+// you, and how it is doing. The drawer has the history.
+export default function CheckGrid({ checks, now, sites, onPick }) {
   if (!checks.length) return <p className="empty">No checks match.</p>;
-  return groupChecks(checks).map(([group, list]) => {
-    const s = summarize(list);
-    const bad = list.filter((c) => c.status !== "up");
-    const good = list.filter((c) => c.status === "up");
-    return (
-      <section key={group} className="group">
-        <h2 className="eyebrow">
-          {group} <span className="count">{list.length}</span>
-          <span className={`group-state st-${s.down ? "down" : s.failing ? "failing" : "up"}`}>
-            {s.up + s.paused === s.total ? "all up" : `${s.total - s.up - s.paused} not up`}
-            {s.paused > 0 && <span className="st-paused"> · {s.paused} paused</span>}
+  const many = Object.keys(sites ?? {}).length > 1;
+  const rows = [...checks].sort((a, b) => (RANK[a.status] - RANK[b.status]) || a.group.localeCompare(b.group)
+    || a.name.localeCompare(b.name));
+  return (
+    <div className="ctable" role="table">
+      <div className="ctable-row ctable-head" role="row">
+        <span className="eyebrow">check</span><span className="eyebrow">what it probes</span>
+        <span className="eyebrow">when down</span><span className="eyebrow">now</span>
+      </div>
+      {rows.map((c) => (
+        <button key={c.name} className={`ctable-row ctable-${c.status}`} role="row" onClick={() => onPick(c.name)}
+                title={c.description || undefined}>
+          <span className="ct-name">
+            <span className={`dot dot-${c.status}`} aria-hidden="true" />
+            <span className="ct-title"><strong>{c.name}</strong>
+              <span className="muted small">{c.group}{many ? ` · ${siteName(sites, c.site)}` : ""}</span></span>
           </span>
-        </h2>
-        {groups[group] && <p className="group-hint">{groups[group][0].toUpperCase() + groups[group].slice(1)}.</p>}
-        {bad.length > 0 && (
-          <div className="grid">
-            {bad.map((c) => <Cell key={c.name} c={c} now={now} sites={sites} onPick={onPick} />)}
-          </div>
-        )}
-        {good.length > 0 && (
-          <div className="crows">
-            {good.map((c) => <Row key={c.name} c={c} onPick={onPick} />)}
-          </div>
-        )}
-      </section>
-    );
-  });
+          <span className="ct-target"><span className="kind">{c.kind.toUpperCase()}</span>
+            <span className="mono" title={c.target}>{c.target.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
+            {isPublic(c) && <span className="chip chip-public" title="Reached from the internet">public</span>}</span>
+          <span className={`ct-alerts small ${c.severity === "critical" ? "st-accent" : "muted"}`}>
+            {c.severity === "critical" ? "alerts you" : "shows here"}</span>
+          <span className="ct-now small">
+            <span className={`st-${c.status}`}>{LABEL[c.status] ?? c.status}</span>
+            <span className="muted"> {c.paused ? agoText(now - c.paused.since)
+              : c.last_change ? `for ${ago(now - c.last_change)}` : ""}</span>
+          </span>
+          {c.status !== "up" && (c.paused?.reason || c.last_error) && (
+            <span className="ct-why small">{c.paused ? (c.paused.reason || "paused") : c.last_error}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
 }

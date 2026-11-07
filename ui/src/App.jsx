@@ -13,6 +13,7 @@ import GetStarted, { coverageLine, SetupBar } from "./components/GetStarted.jsx"
 import Heartbeats from "./components/Heartbeats.jsx";
 import DeploySetup from "./components/DeploySetup.jsx";
 import Hosts from "./components/Hosts.jsx";
+import WatchMore from "./components/WatchMore.jsx";
 import Jobs from "./components/Jobs.jsx";
 import Meter from "./components/Meter.jsx";
 import Ring from "./components/Ring.jsx";
@@ -119,6 +120,11 @@ export default function App() {
   const settingsView = ["alerts", "account", "github", "config"].includes(view);
   // Editing checks: the form, and whether this config can be edited here at all.
   const [editing, setEditing] = useState(null); // null, "new", {initial} or a check
+  const [wmTab, setWmTab] = useState("suggested");
+  const openWatch = (tab) => {
+    setWmTab(tab);
+    setTimeout(() => document.getElementById("watch-more")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
   const [editable, setEditable] = useState(false);
   const [saved, setSaved] = useState(null);
   useEffect(() => {
@@ -261,7 +267,7 @@ export default function App() {
                   Meanwhile, <a href="#/alerts">set up alerts</a> so Argus can reach you.
                 </p>
               )}
-              {coverageLine(data.start?.coverage) && <p className="coverage small">{coverageLine(data.start.coverage)}{data.start.suggestions.length > 0 && <> · <a href="#/hosts">{data.start.suggestions.length} to watch</a></>}</p>}
+              {coverageLine(data.start?.coverage) && <p className="coverage small">{coverageLine(data.start.coverage)}{data.start.suggestions.length > 0 && editable && <> · <a href="#watch-more" onClick={(e) => { e.preventDefault(); openWatch("suggested"); }}>{data.start.suggestions.length} to watch</a></>}</p>}
               <Asides checks={checks} heartbeats={data.heartbeats} alerts={data.info.alerts} />
               <div className="meters">
                 {manySites && siteOrder.map((s) => {
@@ -272,7 +278,8 @@ export default function App() {
                 })}
                 <Meter label="Pages if down" value={critical.filter((c) => c.status === "up").length}
                        total={critical.length} tone="accent"
-                       sub={`critical checks up${pausedCritical ? `, ${pausedCritical} paused` : ""}`} />
+                       sub={critical.length ? `critical checks up${pausedCritical ? `, ${pausedCritical} paused` : ""}`
+                         : "nothing alerts you yet: choose Alert on a check"} />
               </div>
             </div>
           </section>
@@ -297,21 +304,22 @@ export default function App() {
             )}
           </section>
 
-          <section className="group">
-            <h2 className="eyebrow">scheduled runs <span className="count">{data.jobs.length}</span></h2>
-            <p className="group-hint">
-              {data.info.jobs_intro || "Runs that start on their own and report back here when they finish. A failed or overdue run pages."}
-            </p>
-            <Jobs jobs={data.jobs} now={now} sites={sites} />
-          </section>
-
           {saved && <p className="form-ok" role="status">{saved}</p>}
           {editing && (
-            <CheckForm session={session} check={editing === "new" || editing.initial ? null : editing}
-                       initial={editing.initial} sites={sites}
+            <div ref={(el) => el?.scrollIntoView({ behavior: "smooth", block: "center" })}>
+              <CheckForm session={session} check={editing === "new" || editing.initial ? null : editing}
+                         initial={editing.initial} sites={sites}
+                         groups={groupChecks(checks).map(([g]) => g)}
+                         hosts={(data.companions?.companions ?? []).map((h) => h.name)}
+                         onDone={afterSave} onCancel={() => setEditing(null)} />
+            </div>
+          )}
+
+          {session?.signed_in && editable && (
+            <WatchMore suggestions={data.start?.suggestions ?? []} session={session} sites={sites}
                        groups={groupChecks(checks).map(([g]) => g)}
                        hosts={(data.companions?.companions ?? []).map((h) => h.name)}
-                       onDone={afterSave} onCancel={() => setEditing(null)} />
+                       tab={wmTab} onTab={setWmTab} onAdded={(msg) => { setSaved(msg); reload(); }} />
           )}
 
           <section className="toolbar">
@@ -319,16 +327,28 @@ export default function App() {
             {manySites && <Segmented label="Site" value={site} options={siteFilters} onChange={setSite} />}
             <input className="search" type="search" placeholder="Filter by name, target or tag"
                    value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter checks" />
-            {editable && !editing && <button className="btn" onClick={() => { setSaved(null); setEditing("new"); }}>Add a check</button>}
+            {editable && !editing && <button className="btn" onClick={() => { setSaved(null); openWatch("one"); }}>Add a check</button>}
           </section>
 
-          <CheckGrid checks={shown} now={now} sites={sites} groups={data.info.groups} onPick={select} />
+          <CheckGrid checks={shown} now={now} sites={sites} onPick={select} />
 
-          <section className="group">
-            <h2 className="eyebrow">timers <span className="count">{data.heartbeats.length}</span></h2>
-            <p className="group-hint">Background jobs that report in after each run; one that goes quiet is late.</p>
-            <Heartbeats heartbeats={data.heartbeats} now={now} sites={sites} />
-          </section>
+          {/* Runs and timers only when something reports in: an empty box is noise. */}
+          {data.jobs.length > 0 && (
+            <section className="group">
+              <h2 className="eyebrow">scheduled runs <span className="count">{data.jobs.length}</span></h2>
+              <p className="group-hint">
+                {data.info.jobs_intro || "Runs that start on their own and report back here when they finish. A failed or overdue run pages."}
+              </p>
+              <Jobs jobs={data.jobs} now={now} sites={sites} />
+            </section>
+          )}
+          {data.heartbeats.length > 0 && (
+            <section className="group">
+              <h2 className="eyebrow">timers <span className="count">{data.heartbeats.length}</span></h2>
+              <p className="group-hint">Background jobs that report in after each run; one that goes quiet is late.</p>
+              <Heartbeats heartbeats={data.heartbeats} now={now} sites={sites} />
+            </section>
+          )}
         </>
       )}
 

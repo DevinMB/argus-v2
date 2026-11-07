@@ -196,3 +196,23 @@ async def test_a_wrong_path_says_so_and_reading_needs_no_write_token(tmp_path, p
         view = c.put("/api/config/source", headers=csrf, json={
             "source": "github", "repo": "ann/ops", "path": "argus/argus.yml"}).json()
         assert view["source"] == "github" and "# ---- apps ----" in view["text"]
+
+
+def test_checks_from_a_pasted_argus_yml_are_previewed_then_added(tmp_path):
+    from argus import configsrc
+    current = "checks:\n  - {name: atlas, kind: http, target: 'http://10.0.0.5:8420/'}\n"
+    pasted = (
+        "sites: {home: Home, chris: Chris}\n"
+        "checks:\n"
+        "  - {name: atlas, kind: http, target: http://10.0.0.5:8420/}\n"
+        "  - {name: atlas-2, kind: http, target: http://10.0.0.5:8420}\n"
+        "  - {name: shop, kind: http, target: https://shop.example/, severity: critical,"
+        " site: chris}\n"
+        "  - {name: Bad Name, kind: http, target: x}\n")
+    items = {i["name"]: i for i in configsrc.import_preview(pasted, current)}
+    assert items["atlas"]["state"] == "exists"
+    assert items["atlas-2"]["state"] == "covered"
+    assert items["shop"]["state"] == "new" and "site" not in items["shop"]["entry"]
+    assert items["Bad Name"]["state"] == "invalid"
+    text = configsrc.import_checks(current, [items["shop"]["entry"]])
+    assert "shop" in text and "severity: critical" in text
