@@ -118,3 +118,27 @@ def test_deploy_settings_need_the_admin(client):
     assert client.put("/api/deploys", json={"repo": "a/b"}).status_code == 401
     assert client.put("/api/deploys/secrets",
                       json={"path": "a", "env": {}}).status_code == 401
+
+
+async def test_a_saved_read_token_comes_before_the_apps_token(tmp_path):
+    # A GitHub App cannot read a personal account's packages (mars-flink pulls
+    # failed with "installation not allowed"); the owner's saved token can.
+    import sqlite3
+    from types import SimpleNamespace
+
+    from argus.deploys import PULL_TOKEN, REPO, Deploys
+    from argus.ghauth import AppCredentials
+    from argus.settings import Settings, load_key
+
+    app = object.__new__(AppCredentials)
+
+    async def pull_token(owner):
+        return "app-installation-token"
+    app.pull_token = pull_token
+    s = Settings(sqlite3.connect(":memory:"), load_key(tmp_path / "k"))
+    s.set(REPO, "ann/stacks")
+    d = Deploys(s, SimpleNamespace(creds=app), lambda: 0.0)
+    assert (await d.pull_credential())["password"] == "app-installation-token"  # noqa: S105
+    s.set_secret(PULL_TOKEN, "ghp_" + "r" * 36)
+    assert (await d.pull_credential()) == {"registry": "ghcr.io", "username": "argus",
+                                           "password": "ghp_" + "r" * 36}
