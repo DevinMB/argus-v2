@@ -94,3 +94,22 @@ func TestAFailedStepFailsTheRun(t *testing.T) {
 		t.Fatalf("got %+v", s)
 	}
 }
+
+func TestARunInterruptedByARestartIsSettledFromWhatIsPending(t *testing.T) {
+	if !has("apt-get") && !has("dnf") && !has("apk") {
+		t.Skip("no package manager on this machine")
+	}
+	// argus (CT 100): the upgrade finished, the companion restarted mid-run, and
+	// its record said "running" for good, holding every other host's turn.
+	p, _, _ := newTestPatcher(t, false)
+	busy := 2
+	p.pkgBusy, p.pkgWait = func() bool { busy--; return busy > 0 }, time.Millisecond
+	p.save(&PatchState{Run: 16, State: "running", At: 1})
+	p.AfterBoot()
+	if s := p.State(); s.State != "ok" || !strings.Contains(s.Summary, "restarted during the run") {
+		t.Fatalf("got %+v", s)
+	}
+	if pkgBusyProc(t.TempDir()) {
+		t.Fatal("an empty /proc has no package manager")
+	}
+}

@@ -71,3 +71,15 @@ def test_hiding_the_list_is_an_admin_write(client):
     c, csrf = client
     assert c.put("/api/start", json={"hidden": True}).status_code == 403  # no CSRF token
     assert c.put("/api/start", json={"hidden": True}, headers=csrf).json()["hidden"]
+
+
+def test_a_step_once_done_stays_done(tmp_path):
+    from types import SimpleNamespace
+
+    from argus import start
+    rt = SimpleNamespace(config=SimpleNamespace(checks=[]))
+    alerts = {"sender": "argus", "tested": False}
+    v = start.view(rt=rt, alerts=alerts, gh_connected=False, deploy_views=[], companions=[],
+                   hidden=False, seen={"deploys"})
+    steps = {s["key"]: s["done"] for s in v["steps"]}
+    assert steps["deploys"] is True and steps["github"] is False

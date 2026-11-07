@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from argus import sniff
 
 HIDDEN = "start.hidden"
+DONE = "start.done"  # the steps done once: they stay done
 
 
 def _port_of(check) -> tuple[str, int] | None:
@@ -96,7 +97,8 @@ def suggestions(companions: list[dict], checks, sniffer: sniff.Sniffer | None = 
 
 def view(*, rt, alerts: dict, gh_connected: bool, deploy_views: list[dict],
          companions: list[dict], hidden: bool, patched: int = 0,
-         exported_at: float | None = None, sniffer: sniff.Sniffer | None = None) -> dict:
+         exported_at: float | None = None, sniffer: sniff.Sniffer | None = None,
+         seen: set[str] | None = None) -> dict:
     sugg = suggestions(companions, rt.config.checks, sniffer)
     reporting = [h for h in companions if h["status"] == "ok"]
     stacks = [s for v in deploy_views for s in v["stacks"]]
@@ -132,6 +134,11 @@ def view(*, rt, alerts: dict, gh_connected: bool, deploy_views: list[dict],
          "why": "Keep each host's stacks in a repo; a merge then deploys itself.",
          "href": "#/deploy", "action": "Set up deploys"},
     ]
+    # A step once done stays done: it is a setup checklist, not a health meter, and
+    # a moment with nothing deployed (Argus restarting, a host redeploying) must
+    # not bring the setup bar back. Health has its own pages.
+    for st in steps:
+        st["done"] = st["done"] or st["key"] in (seen or set())
     services = sugg
     return {
         "hidden": hidden,

@@ -1049,11 +1049,16 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
     async def get_started(request: Request) -> dict:
         r, st = rt(request), request.app.state
         companions = r.companions.views()
-        return start.view(rt=r, alerts=st.alerter.summary(), gh_connected=st.gh.connected,
+        out = start.view(rt=r, alerts=st.alerter.summary(), gh_connected=st.gh.connected,
                           deploy_views=st.deploys.views(companions), companions=companions,
                           hidden=st.settings.get(start.HIDDEN, False),
                           patched=sum(1 for c in companions if st.patching.counts(c["name"])),
-                          exported_at=st.settings.get(backup.TAKEN), sniffer=st.sniffer)
+                          exported_at=st.settings.get(backup.TAKEN), sniffer=st.sniffer,
+                          seen=set(st.settings.get(start.DONE, [])))
+        done = sorted(x["key"] for x in out["steps"] if x["done"])
+        if done != sorted(st.settings.get(start.DONE, [])):
+            st.settings.set(start.DONE, done)
+        return out
 
     @app.put("/api/start")
     async def hide_start(body: StartHidden, request: Request, _: Admin) -> dict:
