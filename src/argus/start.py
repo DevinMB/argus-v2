@@ -117,7 +117,7 @@ def view(*, rt, alerts: dict, gh_connected: bool, deploy_views: list[dict],
         {"key": "deploys", "done": bool(deployed),
          "title": "Deploy from git",
          "why": "Keep each host's stacks in a repo; a merge then deploys itself.",
-         "href": "#/github", "action": "Choose a deploy repo"},
+         "href": "#/deploy", "action": "Set up deploys"},
     ]
     services = sugg
     return {

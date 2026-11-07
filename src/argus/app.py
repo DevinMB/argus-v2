@@ -46,7 +46,7 @@ from argus.alerts import (
 )
 from argus.auth import COOKIE, SESSION_DAYS, Auth, AuthError, Session
 from argus.companions import REPORT_EVERY, EnrollError, Signer, name_from
-from argus.deploys import BRANCH, ENV_KEY, PULL_TOKEN, STACK, WRITE_TOKEN, Deploys
+from argus.deploys import BRANCH, DEPENDABOT, ENV_KEY, PULL_TOKEN, STACK, WRITE_TOKEN, Deploys
 from argus.guests import GIVE_UP, GuestInstalls
 from argus.metrics import registry
 from argus.patching import REQUEST, Patching
@@ -978,6 +978,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
                 "error": d.error or d.bump_error, "pull_token_set": s.has_secret(PULL_TOKEN),
                 "write_token_set": s.has_secret(WRITE_TOKEN),
                 "hosts": d.snapshot.hosts if d.snapshot else {},
+                "empty": bool(d.snapshot and d.snapshot.empty),
                 "connected": request.app.state.gh.connected}
 
     @app.get("/api/deploys")
@@ -1009,6 +1010,22 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             s.set_secret(WRITE_TOKEN, None)
         await request.app.state.deploys.refresh()
         return deploy_view(request)
+
+    @app.post("/api/deploys/dependabot")
+    async def deploys_dependabot(request: Request, _: Admin) -> dict:
+        """Dependabot in the deploy repo: a pull request for each newer image."""
+        d = request.app.state.deploys
+        try:
+            sha = await d.commit({".github/dependabot.yml": DEPENDABOT},
+                                 "Keep stack images up to date with Dependabot\n\n"
+                                 "It opens a pull request for each newer image; Argus deploys "
+                                 "it once merged.\n")
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from None
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"GitHub said no: {type(e).__name__}") from None
+        await d.refresh()
+        return {"commit": sha}
 
     @app.put("/api/deploys/secrets")
     async def stack_secrets(body: StackSecrets, request: Request, _: Admin) -> dict:

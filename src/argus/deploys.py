@@ -43,6 +43,22 @@ PULL_TOKEN = "deploy.pull_token"  # noqa: S105 (a setting name) secret: registry
 # bumps use it; the GitHub App stays read-only everywhere, so a compromised
 # Argus cannot write to any app's code.
 WRITE_TOKEN = "deploy.write_token"  # noqa: S105 (a setting name)
+README = """# Stacks deployed by Argus
+
+Each folder under `sites/<host>/` is a Docker Compose stack; `hosts/<host>` lists
+the stacks that host runs, one per line. Argus deploys a merged change to the host
+that lists it. Secrets are not here: they are kept in Argus and written to each
+stack's `.env` on its host.
+"""
+DEPENDABOT = """# Keeps the images in these stacks up to date: Dependabot opens a pull request
+# for each newer version, and Argus deploys it once merged.
+version: 2
+updates:
+  - package-ecosystem: "docker-compose"
+    directories: ["/sites/**"]
+    schedule:
+      interval: "weekly"
+"""
 BUMP_GRACE = 1800  # seconds after a green build before a missing bump is a failure
 SECRETS = "stack.env."  # + stack path: secret JSON {KEY: value}
 MAX_FILE = 512 * 1024
@@ -70,6 +86,7 @@ class Snapshot:
     stacks: dict[str, dict[str, bytes]] = field(default_factory=dict)
     error: str = ""
     hosts_text: dict[str, str] = field(default_factory=dict)  # hosts/<host> as written
+    empty: bool = False  # a new repo with no commit yet: the first write starts it
 
 
 def image_re(owner: str, repo: str) -> re.Pattern:
@@ -169,7 +186,10 @@ class GitHubSource:
             if info is None:
                 return Snapshot("", error=f"{self.full_name} is not readable with this connection")
             branch = info["default_branch"]
-        head = await self.poller._get(f"{base}/commits/{branch}")
+        # GitHub answers 409 for a repo with no commit yet: a new repo, made for Argus.
+        head = await self.poller._get(f"{base}/commits/{branch}", missing=(404, 409))
+        if head is None and await self.poller._get(f"{base}/commits", missing=(404, 409)) is None:
+            return Snapshot("", empty=True)
         if head is None:
             return Snapshot("", error=f"no branch {branch} in {self.full_name}")
         sha = head["sha"]
@@ -300,9 +320,18 @@ class Deploys:
             return (await c.get(url, headers=h, auth=None)).raise_for_status().json()
 
         branch = src.branch or (await get(base))["default_branch"]
-        parent = (await get(f"{base}/git/ref/heads/{branch}"))["object"]["sha"]
-        if self.snapshot is None or parent[:12] != self.snapshot.commit:
-            raise ValueError("the deploy repo changed since Argus read it; try again in a minute")
+        ref = await c.get(f"{base}/git/ref/heads/{branch}", headers=h, auth=None)
+        if ref.status_code in (404, 409) and self.snapshot is not None and self.snapshot.empty:
+            # A new, empty repo: the git API needs a first commit to build on.
+            readme = base64.b64encode(README.encode()).decode()
+            first = await c.put(f"{base}/contents/README.md", headers=h, auth=None, json={
+                "message": "Start the deploy repo", "content": readme, "branch": branch})
+            parent = first.raise_for_status().json()["commit"]["sha"]
+        else:
+            parent = ref.raise_for_status().json()["object"]["sha"]
+            if self.snapshot is None or parent[:12] != self.snapshot.commit:
+                raise ValueError("the deploy repo changed since Argus read it;"
+                                 " try again in a minute")
         commit = await get(f"{base}/git/commits/{parent}")
         tree = (await c.post(f"{base}/git/trees", headers=h, auth=None, json={
             "base_tree": commit["tree"]["sha"],
