@@ -242,6 +242,7 @@ class Container(BaseModel):
     status: str = Field("", max_length=200)  # Docker's words: "Up 3 hours (healthy)"
     project: str = Field("", max_length=200)  # the compose project, if any
     ports: list[int] = Field([], max_length=100)  # published TCP ports
+    local_ports: list[int] = Field([], max_length=100)  # of those, on loopback only
     working_dir: str = Field("", max_length=500)  # its Compose project's folder
     config_files: list[str] = Field([], max_length=20)
 

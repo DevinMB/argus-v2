@@ -150,15 +150,19 @@ func TestParseMountInfo(t *testing.T) {
 func TestParseContainers(t *testing.T) {
 	body := []byte(`[{"Names":["/web"],"Image":"ghcr.io/x/web:abc","State":"running",
 	  "Status":"Up 3 hours (healthy)","Labels":{"com.docker.compose.project":"web"},
-	  "Ports":[{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"},{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"},
-	           {"PrivatePort":53,"PublicPort":53,"Type":"udp"},{"PrivatePort":9000,"Type":"tcp"}]},
+	  "Ports":[{"IP":"0.0.0.0","PrivatePort":80,"PublicPort":8080,"Type":"tcp"},{"IP":"::","PrivatePort":80,"PublicPort":8080,"Type":"tcp"},
+	           {"PrivatePort":53,"PublicPort":53,"Type":"udp"},{"PrivatePort":9000,"Type":"tcp"},
+	           {"IP":"127.0.0.1","PrivatePort":5984,"PublicPort":5984,"Type":"tcp"}]},
 	 {"Names":["/job"],"Image":"busybox","State":"exited","Status":"Exited (1) 2 days ago","Labels":{}}]`)
 	got, err := parseContainers(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got[0].Ports, []int{8080}) {
-		t.Fatalf("ports %v: want the published TCP port once", got[0].Ports)
+	if !reflect.DeepEqual(got[0].Ports, []int{5984, 8080}) {
+		t.Fatalf("ports %v: want the published TCP ports once each", got[0].Ports)
+	}
+	if !reflect.DeepEqual(got[0].LocalPorts, []int{5984}) {
+		t.Fatalf("local ports %v: want the one published on loopback only", got[0].LocalPorts)
 	}
 	if got[0].Name != "web" || got[0].Health != "healthy" || got[0].Project != "web" ||
 		got[1].State != "exited" || got[1].Health != "" {

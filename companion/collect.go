@@ -57,6 +57,9 @@ type Container struct {
 	Status  string `json:"status"`
 	Project string `json:"project"`
 	Ports   []int  `json:"ports"` // published TCP ports on the host
+	// Of those, the ones published on the loopback address only (127.0.0.1:5984:5984):
+	// nothing off the host reaches them, so a check for one runs on the host.
+	LocalPorts []int `json:"local_ports,omitempty"`
 	// Where Compose started it from: the project's folder and its compose files.
 	WorkingDir  string   `json:"working_dir,omitempty"`
 	ConfigFiles []string `json:"config_files,omitempty"`
@@ -230,6 +233,7 @@ func parseContainers(body []byte) ([]Container, error) {
 		Status string
 		Labels map[string]string
 		Ports  []struct {
+			IP         string
 			PublicPort int
 			Type       string
 		}
@@ -243,16 +247,28 @@ func parseContainers(body []byte) ([]Container, error) {
 		if len(c.Names) > 0 {
 			name = strings.TrimPrefix(c.Names[0], "/")
 		}
-		ports := []int{}
+		ports, open := []int{}, map[int]bool{}
 		for _, p := range c.Ports {
-			if p.PublicPort > 0 && p.Type == "tcp" && !slices.Contains(ports, p.PublicPort) {
+			if p.PublicPort <= 0 || p.Type != "tcp" {
+				continue
+			}
+			if !slices.Contains(ports, p.PublicPort) {
 				ports = append(ports, p.PublicPort) // IPv4 and IPv6 list each port twice
+			}
+			if p.IP != "127.0.0.1" && p.IP != "::1" {
+				open[p.PublicPort] = true
 			}
 		}
 		slices.Sort(ports)
+		var local []int
+		for _, p := range ports {
+			if !open[p] {
+				local = append(local, p)
+			}
+		}
 		out = append(out, Container{Name: name, Image: c.Image, State: c.State,
 			Health: healthOf(c.Status), Status: c.Status,
-			Project: c.Labels["com.docker.compose.project"], Ports: ports,
+			Project: c.Labels["com.docker.compose.project"], Ports: ports, LocalPorts: local,
 			WorkingDir:  c.Labels["com.docker.compose.project.working_dir"],
 			ConfigFiles: splitNonEmpty(c.Labels["com.docker.compose.project.config_files"], ",")})
 	}
