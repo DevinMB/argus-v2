@@ -29,7 +29,10 @@ from collections.abc import Callable
 SETTINGS = "patch."  # + host: the host's schedule and safety net
 REQUEST = "patch.request."  # + host: "patch now" pressed
 TESTED = 35 * 86400  # a restore test older than this is worth a nudge
-WINDOW = 3 * 3600  # a run may start up to three hours after the window opens
+# A run may start up to six hours after the window opens: hosts take turns, one
+# at a time, so the last of fifteen guests still gets its turn before morning.
+WINDOW = 6 * 3600
+GUESTS = "pve:guests"  # a Proxmox server's safety net: every guest on it backed up
 STUCK = 2 * 3600
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -138,9 +141,26 @@ class Patching:
                             "storage": b.get("storage", "")})
         return out
 
+    def guests_net(self, host: str, report: dict | None, days: int) -> list[dict]:
+        """A Proxmox server's guests and whether each is backed up recently enough.
+        A guest marked as needing no backup (on the server's card) does not count."""
+        px = (report or {}).get("proxmox") or {}
+        ignored = set(self.rt.companions.ignored_of(host))
+        now, out = self.rt.clock(), []
+        for g in px.get("guests") or []:
+            age = now - g["backup"]["at"] if g.get("backup") else None
+            exempt = f"nobackup:{g['vmid']}" in ignored
+            out.append({"vmid": g["vmid"], "name": g["name"], "type": g["type"],
+                        "status": g["status"], "age": age, "exempt": exempt,
+                        "ok": exempt or (age is not None and age < days * 86400)})
+        return out
+
     @staticmethod
     def suggest(host: str, report: dict | None, backups: list[dict]) -> str:
-        """The backup of the Proxmox guest this host is: the one with its name."""
+        """The backup of the Proxmox guest this host is: the one with its name. A
+        Proxmox server's own safety net is its guests' backups."""
+        if (report or {}).get("proxmox"):
+            return GUESTS
         names = {host.lower(), ((report or {}).get("hostname") or "").split(".")[0].lower()}
         for b in backups:
             if b["server"] != host and b["name"] and b["name"].lower() in names:
@@ -151,6 +171,18 @@ class Patching:
         """The host's safety net and what it allows."""
         p = self.plan(host)
         snapshot = (report or {}).get("snapshot") or ""
+        if p["backup"] == GUESTS or (not p["backup"] and (report or {}).get("proxmox")):
+            guests = self.guests_net(host, report, p["backup_days"])
+            short = [g["name"] or str(g["vmid"]) for g in guests if not g["ok"]]
+            counted = [g for g in guests if not g["exempt"]]
+            net = (f"every guest on it backed up within {p['backup_days']} days ({len(counted)})"
+                   if guests and not short else
+                   f"{len(short)} guest{'s' if len(short) != 1 else ''} without a recent backup: "
+                   + ", ".join(short) if short else "no guests reported yet")
+            ok = bool(guests) and not short
+            return {"net": net, "ok": ok, "snapshot": "", "backup": GUESTS, "backup_age": None,
+                    "fresh": ok, "backup_days": p["backup_days"], "guests": guests,
+                    "restore": "", "tested_age": None, "tested": False}
         backup_age = self._age(p["backup"]) if p["backup"] else None
         tested_age = self._age(p["restore"]) if p["restore"] else None
         fresh = backup_age is not None and backup_age < p["backup_days"] * 86400
@@ -219,18 +251,31 @@ class Patching:
         weekday, minute = int(local.get("weekday", -1)), _minutes(local.get("time", "00:00"))
         start = _minutes(p["time"])
         in_window = weekday == p["day"] and start <= minute < start + WINDOW // 60
-        if not (manual or (p["enabled"] and in_window)):
-            return None
         done_today = self.db.execute(
             "SELECT 1 FROM patch_runs WHERE host = ? AND local_date = ? AND trigger = 'window'",
             (host, local["date"])).fetchone()
+        if (p["enabled"] and not manual and not done_today and weekday == p["day"]
+                and minute >= start + WINDOW // 60 and host not in self.skipped):
+            # Its turn never came: other hosts took the whole window. Say so.
+            self.skipped[host] = "its window ended before its turn came (other hosts took it)"
+        if not (manual or (p["enabled"] and in_window)):
+            return None
         if not manual and done_today:
             return None
         why = None
         safety = self.safety(host, report)
-        if not safety["ok"]:
+        if p["backup"] == GUESTS:
+            # One Proxmox server at a time: never while another's newest run failed.
+            for other in self.rt.companions.views():
+                if other["name"] != host and (other["report"] or {}).get("proxmox"):
+                    last = self.runs(other["name"], 1)
+                    if last and last[0]["result"] == "failed":
+                        why = (f"the last run on {other['name']}, another Proxmox server,"
+                               " failed; fix it first")
+        if not why and not safety["ok"]:
             age = safety["backup_age"]
-            why = (f"its backup ({p['backup']}) is {int(age // 86400)} days old,"
+            why = (safety["net"] if p["backup"] == GUESTS
+                   else f"its backup ({p['backup']}) is {int(age // 86400)} days old,"
                    f" over its limit of {p['backup_days']}" if age is not None
                    else f"its backup ({p['backup']}) has never reported" if p["backup"]
                    else "it has no backup linked")

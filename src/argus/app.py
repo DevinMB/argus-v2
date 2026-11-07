@@ -293,7 +293,7 @@ class PatchPlan(BaseModel):
     reboot: bool = True
     # A job or heartbeat, or a guest's vzdump backup seen by a Proxmox host: pve:<host>/<vmid>.
     backup: str = Field("", pattern=r"^$|^(job|heartbeat):[a-z0-9][a-z0-9-]{0,62}$"
-                                    r"|^pve:[a-z0-9][a-z0-9-]{0,62}/[0-9]{1,9}$")
+                                    r"|^pve:[a-z0-9][a-z0-9-]{0,62}/[0-9]{1,9}$|^pve:guests$")
     backup_days: int = Field(8, ge=1, le=366)  # how recent the backup must be
     restore: str = Field("", pattern=r"^$|^(job|heartbeat):[a-z0-9][a-z0-9-]{0,62}$")
     elsewhere: bool = False
@@ -872,6 +872,9 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         if body.enabled and body.elsewhere:
             raise HTTPException(422, "a host patched by something else gets no Argus window: "
                                      "two tools patching one host would fight")
+        if body.backup == "pve:guests" and not (c["report"] or {}).get("proxmox"):
+            raise HTTPException(422, f"{host} is not a Proxmox server: there are no guests"
+                                     " whose backups could cover it")
         if body.enabled and not body.backup and not (c["report"] or {}).get("snapshot"):
             raise HTTPException(422, "link a backup first: Argus only patches a host it can "
                                      "bring back (or choose Something else patches it)")

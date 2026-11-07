@@ -805,3 +805,12 @@ a.btn { text-decoration: none; display: inline-block; }
 details.plumbing { border-top: 1px solid var(--line); padding-top: 8px; }
 details.plumbing > summary { cursor: pointer; }
 details.plumbing[open] > summary { margin-bottom: 4px; }
+.patch-plan { display: grid; gap: 12px; }
+.guests-net { display: grid; gap: 6px; }
+.guests-net p { margin: 0; }
+.server-plan { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+.server-plan:first-of-type { border-top: 0; padding-top: 0; }
+.server-plan-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.server-plan-head a { text-decoration: none; }
+.field-static { padding: 8px 0; color: var(--muted); font-size: 13px; }
+.inline-form select { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; padding: 5px 9px; color: var(--text); font: 13px var(--sans); }

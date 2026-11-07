@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acrossSites, attention, backupLabel, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay } from "./lib.js";
+import { acrossSites, attention, backupLabel, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay } from "./lib.js";
 
 const c = (name, status, extra = {}) => ({
   name, status, site: "B", group: "apps", target: `http://${name}/`, ...extra,
@@ -339,5 +339,15 @@ describe("install help", () => {
     expect(agent.steps.join(" ")).toContain("Shut the VM down");
     expect(installHelp("curl: (7) Failed to connect", { type: "lxc" }).title).toBe("The guest could not reach Argus");
     expect(installHelp("something odd").title).toBe("Adding Argus failed");
+  });
+});
+
+describe("a Proxmox server's safety net", () => {
+  it("counts guests backed up recently, and those that need none", () => {
+    const now = 1_000_000;
+    const host = { ignored: ["nobackup:100"], report: { proxmox: { guests: [
+      { vmid: 100, name: "ollama" }, { vmid: 101, name: "web", backup: { at: now - 2 * 86400 } },
+      { vmid: 102, name: "old", backup: { at: now - 9 * 86400 } }] } } };
+    expect(guestsNet(host, 8, now).map((g) => [g.name, g.ok])).toEqual([["ollama", true], ["web", true], ["old", false]]);
   });
 });
