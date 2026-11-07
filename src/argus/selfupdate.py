@@ -50,7 +50,15 @@ class SelfUpdate:
         self.error = ""
 
     async def check(self) -> None:
-        """The newest green build on main and what changed since this one."""
+        """The newest green build on main and what changed since this one. GitHub's
+        API times out now and then: one more try before saying so."""
+        for attempt in (1, 2):
+            await self._check()
+            if not self.error or attempt == 2:
+                return
+            await asyncio.sleep(3)
+
+    async def _check(self) -> None:
         api = "https://api.github.com/repos/" + REPO
         try:
             r = await self.client.get(f"{api}/actions/runs", params={
@@ -69,8 +77,8 @@ class SelfUpdate:
                 self.changes = [x["commit"]["message"].splitlines()[0]
                                 for x in reversed(body.get("commits") or [])][:20]
             self.error = ""
-        except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
-            self.error = f"could not ask GitHub what is new: {type(e).__name__}"
+        except (httpx.HTTPError, KeyError, ValueError, IndexError):
+            self.error = "GitHub did not answer; try again in a minute"
         self.checked_at = self.clock()
 
     async def run_forever(self) -> None:
@@ -127,7 +135,9 @@ class SelfUpdate:
         mine = own_commit()
         return {"current": mine, "latest": self.latest, "behind": self.behind,
                 "changes": self.changes, "checked_at": self.checked_at, "error": self.error,
-                "up_to_date": bool(self.latest) and self.latest.startswith(mine[:12]),
+                # A check that failed does not prove anything is up to date.
+                "up_to_date": not self.error and bool(self.latest)
+                and self.latest.startswith(mine[:12]),
                 "host": found[0]["name"] if found else None,
                 "image": found[1]["image"] if found else f"{IMAGE}:2",
                 "update": self.state()}
