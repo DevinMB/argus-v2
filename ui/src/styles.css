@@ -81,6 +81,7 @@ button { font: inherit; color: inherit; }
 .banner { margin: 16px 0 0; padding: 10px 14px; border: 1px solid; border-radius: 6px; font-size: 13px; }
 .banner-error { border-color: rgb(255 107 94 / 0.5); background: rgb(255 107 94 / 0.08); }
 .banner-warn { border-color: rgb(242 184 75 / 0.5); background: rgb(242 184 75 / 0.08); }
+.banner-info { border-color: var(--accent); display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 
 /* hero: the eye and the meters */
 .hero {
