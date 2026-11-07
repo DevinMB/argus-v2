@@ -308,3 +308,23 @@ def test_an_appliance_guest_says_to_skip_it(client, csrf):
     r = client.put(f"/api/companions/{pve['id']}/ignored", headers=h,
                    json={"container": "guest:101", "ignored": True})
     assert r.json() == {"ignored": ["guest:101"]}
+
+
+def test_update_argus_goes_to_the_companion_on_its_machine(client, csrf):
+    h = {"X-CSRF-Token": csrf}
+    me = enroll(client, new_code(client, csrf)["code"], "argus").json()
+    here = [{"name": "argus-argus-1", "image": "ghcr.io/devinmb/argus:2", "state": "running",
+             "health": "healthy", "status": "", "project": "argus", "working_dir": "/opt/argus"}]
+    assert client.post("/api/argus/update", headers=h).status_code == 409  # no report yet
+    report(client, me["token"], containers=here)
+    assert client.get("/api/argus/version").json()["host"] == "argus"
+    assert client.post("/api/argus/update", headers=h).json()["update"]["state"] == "waiting"
+    assert client.post("/api/argus/update", headers=h).status_code == 409  # one at a time
+    ask = report(client, me["token"], containers=here)[0].json()["argus_update"]
+    assert ask["image"] == "ghcr.io/devinmb/argus:2" and ask["project"] == "argus"
+    # Argus restarts; the companion tells the new one how it went.
+    done = {"id": ask["id"], "state": "rolled_back", "summary": "the old one is back"}
+    reply = report(client, me["token"], containers=here, argus_update=done)[0].json()
+    assert "argus_update" not in reply
+    upd = client.get("/api/argus/version").json()["update"]
+    assert (upd["state"], upd["summary"]) == ("rolled_back", "the old one is back")

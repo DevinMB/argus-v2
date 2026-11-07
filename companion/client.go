@@ -184,6 +184,8 @@ type Reply struct {
 	Companion   *Build      `json:"companion"`
 	// On a Proxmox server: guests to add the companion to.
 	GuestInstalls []GuestInstall `json:"guest_installs"`
+	// On the machine Argus runs on: update Argus (Settings, Update Argus).
+	ArgusUpdate *ArgusUpdate `json:"argus_update"`
 }
 
 // Build is the companion Argus serves for this host's CPU.
