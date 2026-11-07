@@ -87,6 +87,7 @@ type Collector struct {
 	updates     *Updates
 	updatesNext time.Time
 	pveMu       sync.Mutex
+	updMu       sync.Mutex // updates and updatesNext: a patch run asks for a recount
 	pve         *Proxmox
 	pveNext     time.Time
 	pveSince    time.Time // when the read in flight started; zero when none is
@@ -155,11 +156,13 @@ func (c *Collector) Collect(readOnly bool) *Report {
 			r.Disks = append(r.Disks, Disk{Mount: m, Total: used + st.Bavail*bs, Used: used})
 		}
 	}
+	c.updMu.Lock()
 	if time.Now().After(c.updatesNext) {
 		c.updates = c.pendingUpdates()
 		c.updatesNext = time.Now().Add(updatesEvery)
 	}
 	r.Updates = c.updates
+	c.updMu.Unlock()
 	r.RebootRequired = c.rebootRequired()
 	r.Local = localNow(time.Now())
 	if isProxmox(c.Proxmox) {
@@ -331,6 +334,14 @@ func unescape(s string) string {
 }
 
 // --- package updates, at most hourly: never refreshes package lists itself ---
+
+// SetUpdates keeps a fresh count (after a patch run), so the host does not show
+// the updates it just installed until the next hourly look.
+func (c *Collector) SetUpdates(u *Updates) {
+	c.updMu.Lock()
+	defer c.updMu.Unlock()
+	c.updates, c.updatesNext = u, time.Now().Add(updatesEvery)
+}
 
 func (c *Collector) pendingUpdates() *Updates {
 	u := &Updates{CheckedAt: float64(time.Now().Unix())}
