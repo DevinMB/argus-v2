@@ -373,8 +373,8 @@ func (c *Collector) pendingUpdates() *Updates {
 		}
 		if err != nil || (code != 0 && code != 100) {
 			u.Error = commandError("dnf check-update", code, err)
-			if code > 0 {
-				u.Error += ": " + lastWords(out) // what dnf said, not only that it failed
+			if code > 0 || strings.TrimSpace(out) != "" {
+				u.Error += ": " + lastWords(out) // what dnf (or systemd) said, not only that it failed
 			}
 			return u
 		}
