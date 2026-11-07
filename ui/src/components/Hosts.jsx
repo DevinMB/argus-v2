@@ -886,6 +886,40 @@ function NotWatched({ suggestions, session, reload }) {
   );
 }
 
+// Services whose last run failed. Ignore sets one aside (a login message that
+// cannot reach the internet, a helper for a service that is off on purpose).
+function FailedUnits({ host, session, reload }) {
+  const [error, setError] = useState(null);
+  const ignored = host.ignored ?? [];
+  const toggle = async (u, on) => {
+    try {
+      await send("PUT", `/api/companions/${host.id}/ignored`, { container: `unit:${u}`, ignored: on }, session.csrf);
+      reload();
+    } catch (e) { setError(e.message); }
+  };
+  const units = [...host.report.failed_units].sort((a, b) => ignored.includes(`unit:${a}`) - ignored.includes(`unit:${b}`));
+  return (
+    <Section title="failed systemd units"
+      about={<>Services whose last run ended in an error; <code>systemctl status &lt;name&gt;</code> on the host says why, and
+        <code> systemctl reset-failed &lt;name&gt;</code> clears one. <strong>Ignore</strong> sets one aside here without touching the host.</>}>
+      <ul className="rows">{units.map((u) => {
+        const off = ignored.includes(`unit:${u}`);
+        return (
+          <li key={u} className={off ? "muted" : undefined}>
+            <span className={`dot dot-${off ? "unknown" : "down"}`} />
+            <span className="row-main mono">{u}</span>
+            <span className="row-note muted">{off ? "ignored" : ""}</span>
+            <span className="row-act">{session?.signed_in && (
+              <button className="btn btn-small" onClick={() => toggle(u, !off)}>{off ? "Stop ignoring" : "Ignore"}</button>
+            )}</span>
+          </li>
+        );
+      })}</ul>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </Section>
+  );
+}
+
 function Overview({ host, suggestions, session, reload }) {
   const r = host.report ?? {};
   const look = attention(host);
@@ -907,13 +941,7 @@ function Overview({ host, suggestions, session, reload }) {
           </p>
         </Section>
       )}
-      {r.failed_units?.length > 0 && (
-        <Section title="failed systemd units">
-          <ul className="rows">{r.failed_units.map((u) => (
-            <li key={u}><span className="dot dot-down" /><span className="row-main mono">{u}</span></li>
-          ))}</ul>
-        </Section>
-      )}
+      {r.failed_units?.length > 0 && <FailedUnits host={host} session={session} reload={reload} />}
       {host.checks.length > 0 && (
         <Section title="checks run from here">
           <ul className="rows">{host.checks.map((c) => (

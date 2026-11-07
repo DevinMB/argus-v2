@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acrossSites, attention, backupLabel, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay } from "./lib.js";
+import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay } from "./lib.js";
 
 const c = (name, status, extra = {}) => ({
   name, status, site: "B", group: "apps", target: `http://${name}/`, ...extra,
@@ -349,5 +349,13 @@ describe("a Proxmox server's safety net", () => {
       { vmid: 100, name: "ollama" }, { vmid: 101, name: "web", backup: { at: now - 2 * 86400 } },
       { vmid: 102, name: "old", backup: { at: now - 9 * 86400 } }] } } };
     expect(guestsNet(host, 8, now).map((g) => [g.name, g.ok])).toEqual([["ollama", true], ["web", true], ["old", false]]);
+  });
+});
+
+describe("failed units", () => {
+  it("leaves out the ones the owner ignored", () => {
+    const host = { status: "ok", ignored: ["unit:motd-news.service"], report: { failed_units: ["motd-news.service", "sep5.service"] } };
+    expect(failedUnits(host)).toEqual(["sep5.service"]);
+    expect(attention(host)).toEqual([["down", "1 failed unit"]]);
   });
 });
