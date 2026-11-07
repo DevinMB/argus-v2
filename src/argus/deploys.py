@@ -91,9 +91,14 @@ class Snapshot:
 
 def image_re(owner: str, repo: str) -> re.Pattern:
     """The repo's images: ghcr.io/<owner>/<repo>[-component]:sha-<commit>. A
-    -beta image follows another branch, so it is never main's."""
+    -beta image (shop-beta, or a component's: shop-frontend-beta) follows another
+    branch, so it is never main's: see is_beta."""
     return re.compile(rf"(ghcr\.io/{re.escape(owner.lower())}/{re.escape(repo.lower())}"
                       r"(-[a-z0-9-]+)?:sha-)([0-9a-f]{7,40})")
+
+
+def is_beta(m: re.Match) -> bool:
+    return (m.group(2) or "").endswith("-beta")
 
 
 COMPOSE = ("compose.yml", "compose.yaml", "docker-compose.yml")
@@ -279,7 +284,7 @@ class Deploys:
         rx, out = image_re(owner, repo), []
         for path, files in snap.stacks.items():
             text = "".join(files.get(n, b"").decode(errors="replace") for n in COMPOSE)
-            shas = sorted({m.group(3)[:7] for m in rx.finditer(text) if m.group(2) != "-beta"})
+            shas = sorted({m.group(3)[:7] for m in rx.finditer(text) if not is_beta(m)})
             if shas:
                 out.append({"path": path, "shas": shas,
                             "hosts": sorted(h for h, st in snap.hosts.items() if path in st)})
@@ -299,7 +304,7 @@ class Deploys:
                 text = changed.get(key, files[name].decode(errors="replace"))
                 for owner, repo, sha in builds:
                     text = image_re(owner, repo).sub(
-                        lambda m, sha=sha: m.group(0) if m.group(2) == "-beta"
+                        lambda m, sha=sha: m.group(0) if is_beta(m)
                         else m.group(1) + sha[:7], text)
                 if text != files[name].decode(errors="replace"):
                     changed[key] = text

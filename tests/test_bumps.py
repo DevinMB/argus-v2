@@ -14,6 +14,7 @@ WRITE = "github_pat_" + "W" * 30
 COMPOSE = ("services:\n  web: {image: ghcr.io/ann/shop:sha-aaaaaaa}\n"
            "  api: {image: ghcr.io/ann/shop-api:sha-aaaaaaa}\n"
            "  beta: {image: ghcr.io/ann/shop-beta:sha-0000000}\n"
+           "  webbeta: {image: ghcr.io/ann/shop-web-beta:sha-0000000}\n"
            "  other: {image: ghcr.io/ann/notes:sha-1111111}\n")
 
 
@@ -75,6 +76,7 @@ async def test_a_green_build_bumps_its_tags_in_one_fast_forward_commit(tmp_path)
     assert tree["tree"][0]["path"] == "sites/home/shop/compose.yml"
     assert "shop:sha-bbbbbbb" in text and "shop-api:sha-bbbbbbb" in text
     assert "shop-beta:sha-0000000" in text and "notes:sha-1111111" in text  # untouched
+    assert "shop-web-beta:sha-0000000" in text  # a component's beta follows its own branch too
     assert commit["parents"] == ["c" * 40]
     assert commit["message"].startswith("Deploy: shop sha-bbbbbbb")
 
