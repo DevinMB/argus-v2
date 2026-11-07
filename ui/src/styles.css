@@ -814,4 +814,26 @@ details.plumbing[open] > summary { margin-bottom: 4px; }
 .server-plan-head a { text-decoration: none; }
 .field-static { padding: 8px 0; color: var(--muted); font-size: 13px; }
 .inline-form select { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; padding: 5px 9px; color: var(--text); font: 13px var(--sans); }
+/* Deploy from git: a numbered, guided setup. */
+.deploy-setup { max-width: 820px; }
+.dsteps { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 0; }
+.dstep { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; position: relative; padding-bottom: 22px; }
+.dstep:not(:last-child)::before { content: ""; position: absolute; left: 15px; top: 34px; bottom: 4px; width: 1px; background: var(--line-strong); }
+.dstep-n { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 600 13px var(--mono);
+  border: 1px solid var(--line-strong); color: var(--muted); background: var(--bg); position: relative; }
+.dstep-open .dstep-n { border-color: var(--accent); color: var(--accent); }
+.dstep-done .dstep-n { background: color-mix(in srgb, var(--up) 18%, var(--bg)); border-color: var(--up); color: var(--up); }
+.dstep-body { display: grid; gap: 10px; padding-top: 4px; min-width: 0; }
+.dstep-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.dstep-head h2 { margin: 0; font: 600 16px/1.4 var(--sans); }
+.dstep:not(.dstep-open):not(.dstep-done) .dstep-head h2 { color: var(--muted); }
+.dstep-open .dstep-body { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-top: -4px; }
+.dstep-body p { margin: 0; }
+.dlist { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.dform { display: grid; gap: 10px; }
+.dform input, .dstep-body select { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; padding: 7px 10px;
+  color: var(--text); font: 13px var(--mono); min-width: 0; }
+.dstep-body .field-row select { flex: 1; font-family: var(--sans); }
+.dhost { display: grid; gap: 4px; }
+.dhost .rows li { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .changes { margin: 0; padding-left: 18px; display: grid; gap: 3px; color: var(--muted); max-height: 14em; overflow: auto; }

@@ -166,6 +166,7 @@ function Deploys({ session, view, setError }) {
   return (
     <div className="panel">
       <h2 className="eyebrow">Deploys</h2>
+      <p><a className="btn btn-small btn-primary" href="#/deploy">Set up deploys, step by step</a></p>
       <p className="muted">
         One repo says what each host runs: <code>hosts/&lt;host&gt;</code> lists stack folders, and each
         folder holds a <code>compose.yml</code>. A host's companion deploys its stacks when they change,

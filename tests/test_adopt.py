@@ -25,7 +25,7 @@ class FakeRepo:
     def __init__(self):
         self.files = {"hosts/nas": "# what nas runs\nsites/nas/old\n",
                       "sites/nas/old/compose.yml": "services: {old: {image: busybox}}\n"}
-        self.head, self.commits = "a" * 40, []
+        self.head, self.commits, self.empty = "a" * 40, [], False
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path, m = request.url.path, request.method
@@ -33,6 +33,11 @@ class FakeRepo:
         if m != "GET":
             assert request.headers["authorization"] == f"Bearer {WRITE}"
             body = json.loads(request.content)
+            if path.endswith("/contents/README.md") and self.empty:
+                self.files["README.md"] = base64.b64decode(body["content"]).decode()
+                self.head, self.empty = "c" * 40, False
+                self.commits.append((body["message"], {"README.md": self.files["README.md"]}))
+                return httpx.Response(201, json={"commit": {"sha": self.head}})
             if path.endswith("/git/trees"):
                 self.pending = {e["path"]: e["content"] for e in body["tree"]}
                 return httpx.Response(201, json={"sha": "t"})
@@ -46,6 +51,9 @@ class FakeRepo:
         blob = lambda p: hashlib.sha256(self.files[p].encode()).hexdigest()  # noqa: E731
         if path == base:
             return httpx.Response(200, json={"default_branch": "main"})
+        if self.empty and path in (f"{base}/commits/main", f"{base}/commits",
+                                   f"{base}/git/ref/heads/main"):
+            return httpx.Response(409, json={"message": "Git Repository is empty."})
         if path == f"{base}/commits/main" or path == f"{base}/git/ref/heads/main":
             return httpx.Response(200, json={"sha": self.head, "object": {"sha": self.head}})
         if path == f"{base}/git/trees/{self.head}":
@@ -189,3 +197,30 @@ def test_project_names_follow_compose():
     assert project_name("sites/home/My_App", {"compose.yml": b"services: {}"}) == "my_app"
     assert project_name("sites/home/x", {"compose.yml": b"name: Shop\nservices: {}"}) == "shop"
     assert project_name("sites/home/x", {"docker-compose.yml": b"name: [bad]"}) == "x"
+
+
+def test_a_brand_new_empty_repo_takes_the_first_stack(env):
+    # Fresh setup: the owner makes an empty repo on GitHub just for Argus.
+    c, csrf, tok, fake = env
+    fake.files, fake.empty = {}, True
+    c.portal.call(c.app.state.deploys.refresh)
+    assert c.get("/api/deploys").json()["empty"] is True
+    report(c, tok)
+    c.post("/api/adopt/nas/media/read", headers=csrf)
+    report(c, tok, collected=collected())
+    assert c.get("/api/adopt/nas/media", headers=csrf).json()["blockers"] == []
+    assert c.post("/api/adopt/nas/media", headers=csrf).status_code == 200
+    (first, readme), (msg, files) = fake.commits
+    assert first == "Start the deploy repo" and "deployed by Argus" in readme["README.md"]
+    assert files == {"sites/nas/media/compose.yml": COMPOSE, "hosts/nas": "sites/nas/media\n"}
+    assert c.get("/api/deploys").json()["empty"] is False
+
+
+def test_dependabot_is_one_press(env):
+    c, csrf, tok, fake = env
+    r = c.post("/api/deploys/dependabot", headers=csrf)
+    assert r.status_code == 200
+    msg, files = fake.commits[-1]
+    assert msg.startswith("Keep stack images up to date")
+    assert 'package-ecosystem: "docker-compose"' in files[".github/dependabot.yml"]
+

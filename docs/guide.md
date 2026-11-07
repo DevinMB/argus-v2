@@ -66,6 +66,13 @@ On **Hosts**, press **Add a host** and run the command it shows on the host. It 
 
 ## Deploys
 
+**Set up deploys** (the checklist, or GitHub, Deploys) walks through it in four steps:
+
+1. **Where your stacks live**: a private repo. **Create one on GitHub** opens GitHub's new-repo page with `homelab-stacks` filled in; an empty repo is fine, Argus writes its first commit.
+2. **Let Argus write to it**: a fine-grained token for that repo only, with Contents read and write. Argus checks it can push before keeping it.
+3. **Move your stacks in**: every Compose project running on your hosts outside Argus, ticked, grouped by host. **Move into git** has each host send its files, commits each project's compose file to `sites/<host>/<project>/` and adds it to `hosts/<host>`, and keeps its `.env` secrets in Argus. Containers keep running where they are. A project that cannot move says why (a secret written into the compose file, a folder outside the host's policy). Argus's own stack stays out: it updates from Settings.
+4. **Keep them up to date**: **Turn on Dependabot** commits `.github/dependabot.yml`, so a newer image arrives as a pull request; merging it deploys it.
+
 One repo says what each host runs: `hosts/<host>` lists stack folders (one per line), and each folder holds a `compose.yml` and any files next to it. Pick it on the GitHub page. Each host's companion deploys its stacks when they change: `docker compose pull`, then `up --wait` until healthy, and back to the previous files if it is not.
 
 - **The host's policy decides.** `/etc/argus-companion/policy.json` on each host lists what it will never run: by default privileged containers, the host's network or PID namespace, the Docker socket, devices, risky capabilities, and binds from outside `/srv`, `/opt`, `/mnt`, `/media` or the stack's own folder. Argus cannot change it; a stack that breaks it is refused before anything is written, and pages.
