@@ -23,29 +23,30 @@ import (
 // Report is the host's state, sent once a minute. Fields the host cannot tell
 // (no Docker, no systemd) are left out rather than reported as empty.
 type Report struct {
-	Nonce          string         `json:"nonce"`
-	Version        string         `json:"version"`
-	Hostname       string         `json:"hostname"`
-	OS             string         `json:"os"`
-	Kernel         string         `json:"kernel"`
-	Arch           string         `json:"arch"`
-	Uptime         float64        `json:"uptime"`
-	ReadOnly       bool           `json:"read_only"`
-	Containers     []Container    `json:"containers"` // null: no Docker here
-	DockerError    string         `json:"docker_error,omitempty"`
-	FailedUnits    []string       `json:"failed_units"` // null: no systemd
-	Disks          []Disk         `json:"disks"`
-	Updates        *Updates       `json:"updates,omitempty"`
-	RebootRequired *bool          `json:"reboot_required,omitempty"`
-	Checks         []CheckResult  `json:"checks"`
-	Deploys        []DeployResult `json:"deploys"`
-	Local          LocalTime      `json:"local"`
-	Snapshot       string         `json:"snapshot,omitempty"` // "zfs" when / can be snapshotted
-	Patch          *PatchState    `json:"patch,omitempty"`
-	PolicyRoots    []string       `json:"policy_roots,omitempty"` // folders deploys may use
-	Collected      []Collected    `json:"collected,omitempty"`
-	Proxmox        *Proxmox       `json:"proxmox,omitempty"` // on a Proxmox server
-	GuestInstalls  []GuestResult  `json:"guest_installs,omitempty"`
+	Nonce          string             `json:"nonce"`
+	Version        string             `json:"version"`
+	Hostname       string             `json:"hostname"`
+	OS             string             `json:"os"`
+	Kernel         string             `json:"kernel"`
+	Arch           string             `json:"arch"`
+	Uptime         float64            `json:"uptime"`
+	ReadOnly       bool               `json:"read_only"`
+	Containers     []Container        `json:"containers"` // null: no Docker here
+	DockerError    string             `json:"docker_error,omitempty"`
+	FailedUnits    []string           `json:"failed_units"` // null: no systemd
+	Disks          []Disk             `json:"disks"`
+	Updates        *Updates           `json:"updates,omitempty"`
+	RebootRequired *bool              `json:"reboot_required,omitempty"`
+	Checks         []CheckResult      `json:"checks"`
+	Deploys        []DeployResult     `json:"deploys"`
+	Local          LocalTime          `json:"local"`
+	Snapshot       string             `json:"snapshot,omitempty"` // "zfs" when / can be snapshotted
+	Patch          *PatchState        `json:"patch,omitempty"`
+	PolicyRoots    []string           `json:"policy_roots,omitempty"` // folders deploys may use
+	Collected      []Collected        `json:"collected,omitempty"`
+	Proxmox        *Proxmox           `json:"proxmox,omitempty"` // on a Proxmox server
+	GuestInstalls  []GuestResult      `json:"guest_installs,omitempty"`
+	ArgusUpdate    *ArgusUpdateResult `json:"argus_update,omitempty"`
 }
 
 type Container struct {

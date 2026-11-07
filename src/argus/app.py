@@ -52,6 +52,7 @@ from argus.metrics import registry
 from argus.patching import REQUEST, Patching
 from argus.probes import Result
 from argus.runtime import Runtime
+from argus.selfupdate import SelfUpdate
 from argus.settings import Settings, load_key
 from argus.sniff import Sniffer
 
@@ -329,6 +330,13 @@ class GuestResult(BaseModel):
     output: str = Field("", max_length=8000)
 
 
+class ArgusUpdateResult(BaseModel):
+    id: str = Field(max_length=40)
+    state: Literal["running", "ok", "failed", "rolled_back"]
+    summary: str = Field("", max_length=2000)
+    log: str = Field("", max_length=32000)
+
+
 class Report(BaseModel):
     nonce: str = Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")
     version: str = Field("", max_length=100)
@@ -353,6 +361,7 @@ class Report(BaseModel):
     collected: list[CollectedProject] = Field([], max_length=20)
     proxmox: Proxmox | None = None
     guest_installs: list[GuestResult] = Field([], max_length=50)
+    argus_update: ArgusUpdateResult | None = None
 
 
 class DeploySettings(BaseModel):
@@ -498,6 +507,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         app.state.adoption = Adoption(settings, deploys, rt.clock)
         app.state.guests = GuestInstalls(rt.clock)
         app.state.sniffer = Sniffer(rt.clock)
+        app.state.selfupdate = SelfUpdate(settings, client, rt.clock)
         app.state.registry = registry(rt, gh, alerter.prometheus_test_active)
         tasks = []
         if start_scheduler:
@@ -505,6 +515,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             tasks.append(asyncio.create_task(alerter.run_forever()))
             tasks.append(asyncio.create_task(deploys.run_forever()))
             tasks.append(asyncio.create_task(app.state.configsrc.run_forever()))
+            tasks.append(asyncio.create_task(app.state.selfupdate.run_forever()))
             tasks.append(asyncio.create_task(github.run_forever(
                 gh, lambda: rt.config, lambda: set(settings.get(ghauth.HIDDEN, [])))))
         yield
@@ -924,6 +935,30 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         response.delete_cookie(COOKIE, path="/")
         return {**out, "signed_out": True}
 
+    # --- updating Argus itself, through the companion on its machine ---
+
+    @app.get("/api/argus/version")
+    async def argus_version(request: Request) -> dict:
+        return request.app.state.selfupdate.view(rt(request).companions.views())
+
+    @app.post("/api/argus/version/check")
+    async def argus_version_check(request: Request, _: Admin) -> dict:
+        await request.app.state.selfupdate.check()
+        return request.app.state.selfupdate.view(rt(request).companions.views())
+
+    @app.post("/api/argus/update")
+    async def argus_update(request: Request, _: Admin) -> dict:
+        su = request.app.state.selfupdate
+        found = su.host_of(rt(request).companions.views())
+        if found is None:
+            raise HTTPException(409, "no companion runs on Argus's machine, so Argus cannot"
+                                     " update itself; use the command shown instead")
+        cur = su.state()
+        if cur and cur["state"] in ("waiting", "running"):
+            raise HTTPException(409, "an update is already on its way")
+        su.request(found[0]["name"], found[1])
+        return su.view(rt(request).companions.views())
+
     # --- adopting running stacks, in place ---
 
     @app.post("/api/adopt/{host}/{project}/read")
@@ -1155,7 +1190,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         # Collected files (with a .env) stay in memory for the preview, never stored.
         r.companions.save_report(row["id"],
                                  rep.model_dump(exclude={"nonce", "checks", "collected",
-                                                         "guest_installs"}),
+                                                         "guest_installs", "argus_update"}),
                                  address(request))
         if not row["read_only"]:
             request.app.state.adoption.received(row["name"],
@@ -1164,6 +1199,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         pt.record(row["name"], rep.patch and rep.patch.model_dump())
         gi = request.app.state.guests
         gi.results(row["name"], [x.model_dump() for x in rep.guest_installs])
+        su = request.app.state.selfupdate
+        su.result(row["name"], rep.argus_update and rep.argus_update.model_dump())
         body = {
             "name": row["name"],
             "report_every": REPORT_EVERY,
@@ -1188,6 +1225,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         # A monitoring-only host keeps the program it has: it is not Argus's to change.
         if not row["read_only"] and (sha := companion_sha256(rep.arch)):
             body["companion"] = {"sha256": sha}
+        if not row["read_only"] and (upd := su.to_send(row["name"])):
+            body["argus_update"] = upd
         if not row["read_only"] and rep.proxmox and (todo := gi.to_send(row["name"])):
             body["guest_installs"] = todo
         run = pt.grant(row["name"], bool(row["read_only"]), rep.model_dump())

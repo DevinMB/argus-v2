@@ -29,6 +29,8 @@ type Policy struct {
 	// True: on a Proxmox server, never add the companion to a guest when Argus
 	// asks (Add Argus on a guest row).
 	NoGuestInstalls bool `json:"no_guest_installs"`
+	// True: never update Argus when it asks (Settings, Update Argus).
+	NoArgusUpdates bool `json:"no_argus_updates"`
 }
 
 func defaultPolicy() *Policy {
