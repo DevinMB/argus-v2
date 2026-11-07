@@ -842,3 +842,5 @@ details.plumbing[open] > summary { margin-bottom: 4px; }
 .secret-saved { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13.5px; }
 .secret-saved .link-button { margin-left: 0; font-size: 13px; }
 .dnote { padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 8px; }
+.no-backup { display: grid; gap: 4px; }
+.no-backup p { margin: 0; }

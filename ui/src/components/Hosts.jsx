@@ -364,7 +364,7 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
             <option value="security">Security only</option>
           </select></label>
         <label className="field"><span>{server ? "Its safety net" : "Its backup"}</span>
-          {server ? <span className="field-static">Every guest on it backed up</span> : <select value={p.backup} onChange={(e) => set("backup", e.target.value)}>
+          {server ? <span className="field-static">Every guest on it backed up</span> : <select value={p.backup} onChange={(e) => set("backup", e.target.value)} disabled={p.no_backup}>
             <option value="">None yet</option>
             {backups.length > 0 && (
               <optgroup label="Proxmox backups">
@@ -376,7 +376,12 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
                 {refs.map((r) => <option key={r} value={r}>{r.replace(":", ": ")}</option>)}
               </optgroup>
             )}
-          </select>}</label>
+          </select>}
+          {!server && (
+            <label className="toggle small"><input type="checkbox" checked={!!p.no_backup}
+              onChange={(e) => setP({ ...p, no_backup: e.target.checked, backup: e.target.checked ? "" : p.backup })} />
+              <span>It needs no backup<small>I can rebuild it if an update breaks it. Argus patches it anyway.</small></span></label>
+          )}</label>
         <label className="field"><span>Recent means (days)</span>
           <input type="number" min="1" max="366" value={p.backup_days}
             onChange={(e) => set("backup_days", Number(e.target.value))} required /></label>
@@ -1024,10 +1029,25 @@ function PatchPlan({ hosts, backups, session, reload }) {
           </div>
         )}
         {noBackup.length > 0 && (
-          <p className="small st-failing">
-            Not included, no backup from the last {plan.backup_days} days: {noBackup.map((h) => h.name).join(", ")}.
-            Add them to a backup job in Proxmox (Datacenter, Backup), and they are ready after its next run.
-          </p>
+          <div className="no-backup">
+            <p className="small st-failing">
+              Not included, no backup from the last {plan.backup_days} days. Add them to a backup job in Proxmox
+              (Datacenter, Backup) and they are ready after its next run, or, for one you could rebuild, patch it without a backup:
+            </p>
+            <ul className="rows">{noBackup.map((h) => (
+              <li key={h.id}><span className="dot dot-failing" />
+                <span className="row-main">{h.name}</span><span className="row-note" />
+                <span className="row-act">{session?.signed_in && (
+                  <button className="btn btn-small" disabled={busy}
+                          onClick={async () => {
+                            setError(null);
+                            try { await put(h, { ...plan, day: Number(plan.day), backup: "", no_backup: true }); setMsg(`${h.name} is patched on ${DAYS[plan.day]}s without a backup.`); }
+                            catch (e) { setError(`${h.name}: ${e.message}`); }
+                            reload();
+                          }}>Patch without a backup</button>
+                )}</span></li>
+            ))}</ul>
+          </div>
         )}
         {msg && <p className="form-ok small" role="status">{msg}</p>}
         {error && <p className="form-error" role="alert">{error}</p>}
