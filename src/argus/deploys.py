@@ -469,10 +469,15 @@ class Deploys:
         return out
 
     async def pull_credential(self) -> dict | None:
-        """Short-lived read access to the registry, for this deploy only. The app's
-        installation token when the app is connected, else the saved read token."""
+        """Read access to the registry, for this deploy only: the read token the owner
+        saved, when there is one (it is there because the app's token was refused:
+        a GitHub App cannot read a personal account's packages), else the app's
+        short-lived installation token."""
         creds = self.poller.creds
         repo = self.settings.get(REPO) or ""
+        saved = self.settings.secret(PULL_TOKEN)
+        if saved:
+            return {"registry": "ghcr.io", "username": "argus", "password": saved}
         if isinstance(creds, AppCredentials) and repo:
             try:
                 token = await creds.pull_token(repo.split("/")[0])
@@ -481,8 +486,7 @@ class Deploys:
                 token = None
             if token:
                 return {"registry": "ghcr.io", "username": "x-access-token", "password": token}
-        saved = self.settings.secret(PULL_TOKEN)
-        return {"registry": "ghcr.io", "username": "argus", "password": saved} if saved else None
+        return None
 
     def views(self, companions: list[dict]) -> list[dict]:
         """For the Hosts page: each host's stacks and how their deploys went."""
