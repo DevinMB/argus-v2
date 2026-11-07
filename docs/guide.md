@@ -15,6 +15,10 @@ When you already know why something is down (a server switched off until another
 
 A paused check keeps running, so its history stays true, but it shows as a grey "Paused" with your reason, never pages, and is left out of every count of problems. Pausing a check that already paged sends no "resolved". Resuming one that is still down pages again. Any signed-in user can pause, whatever the config's source, and the pause is in the history and in Argus's export. If Prometheus pages for you, `argus_check_paused` is 1 while a check is paused, and the rules on the Alerts page skip paused checks.
 
+## Watching
+
+**Checks, Watch more** puts every service worth watching on one page: each port your hosts' containers publish that no check covers (Argus tries each once to pick HTTP or TCP; exporters and brokers fold under "Usually not worth watching"), and each Proxmox server's web UI. Choose **Off**, **Watch** (a problem shows in Argus) or **Alert** (it also alerts you) for each, then **Add**. **A website or service** adds anything else, such as a public URL or a device; **Import** reads a pasted argus.yml, marks the checks you already have, and adds the ones you tick.
+
 ## Patching
 
 **Hosts, Patching** sets it up for everything at once. Guests share one plan (a day, a starting time, all updates or security only, reboots, how recent the backup must be): **Turn on for N guests** applies it to every guest whose Proxmox backup is recent enough, and names the ones that have none. Each Proxmox server gets its own day, away from the guests' (the server Argus runs on goes last), and hosts with no backup Argus can see are listed with what to do. Any host can still be changed on its own page.

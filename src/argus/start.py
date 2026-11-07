@@ -74,6 +74,19 @@ def suggestions(companions: list[dict], checks, sniffer: sniff.Sniffer | None = 
                     "internal": sniff.internal(c["name"], c.get("image", "")),
                     "check": sniff.shape(check, sniffer and sniffer.known(check["target"])),
                 })
+    # A Proxmox server's own web UI: Argus knows the server, so it is worth watching.
+    for h in companions:
+        rep = h.get("report") or {}
+        addr = h.get("address", "")
+        if not rep.get("proxmox") or not _reachable(addr):
+            continue
+        covered = (addr, 8006) in probed
+        name = _name(f"pve-{h['name']}", 8006, taken)
+        taken.add(name)
+        out.append({"host": h["name"], "container": "Proxmox web UI", "port": 8006,
+                    "covered": covered, "internal": False,
+                    "check": {"name": name, "kind": "http", "target": f"https://{addr}:8006/",
+                              "group": "infrastructure", "verify_tls": False}})
     if sniffer is not None:
         sniffer.kick([s["check"]["target"] for s in out
                       if not s["covered"] and s["check"]["kind"] == "tcp"

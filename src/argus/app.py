@@ -207,6 +207,19 @@ class HostRename(BaseModel):
     new: str | None = Field(None, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")  # None: remove it
 
 
+class ImportChecks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(max_length=200_000)
+    names: list[str] | None = Field(None, max_length=500)  # None: preview only
+    base: str = ""
+
+
+class AddChecks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    checks: list[dict] = Field(min_length=1, max_length=200)
+    base: str = ""
+
+
 class Ignore(BaseModel):
     model_config = ConfigDict(extra="forbid")
     container: str = Field(min_length=1, max_length=255)
@@ -822,6 +835,40 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         why = f"{'change' if body.replace else 'add'} {body.kind[:-1]} {name}"
         out = await edit_call(src.save)(text, body.base, why)
         return {**src.view(), **out}
+
+    @app.post("/api/config/import")
+    async def config_import(body: ImportChecks, request: Request, _: Admin) -> dict:
+        """Checks from a pasted argus.yml: a preview, then the chosen new ones added
+        in one save."""
+        src = request.app.state.configsrc
+        try:
+            items = configsrc.import_preview(body.text, src.text())
+        except configsrc.EditError as e:
+            raise HTTPException(e.status, str(e)) from None
+        if body.names is None:
+            return {"checks": items}
+        chosen = [i["entry"] for i in items if i["state"] == "new" and i["name"] in body.names]
+        if not chosen:
+            raise HTTPException(409, "none of those are new checks")
+        try:
+            text = configsrc.import_checks(src.text(), chosen)
+        except configsrc.EditError as e:
+            raise HTTPException(e.status, str(e)) from None
+        out = await edit_call(src.save)(text, body.base, f"import {len(chosen)} checks")
+        return {**src.view(), **out, "added": len(chosen)}
+
+    @app.post("/api/config/checks")
+    async def config_add_checks(body: AddChecks, request: Request, _: Admin) -> dict:
+        """Several checks at once (Watch more on the Checks page), in one save."""
+        src = request.app.state.configsrc
+        try:
+            text = configsrc.import_checks(src.text(), body.checks)
+        except configsrc.EditError as e:
+            raise HTTPException(e.status, str(e)) from None
+        except ValidationError as e:
+            raise HTTPException(422, e.errors(include_url=False, include_context=False)) from None
+        out = await edit_call(src.save)(text, body.base, f"add {len(body.checks)} checks")
+        return {**src.view(), **out, "added": len(body.checks)}
 
     @app.delete("/api/config/entries/{kind}/{name}")
     async def config_remove(kind: Literal["checks", "heartbeats", "jobs"], name: str,

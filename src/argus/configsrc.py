@@ -269,3 +269,46 @@ class ConfigSource:
             "title": f"argus.yml: {why}", "head": new, "base": branch,
             "body": "Edited in Argus. It takes effect when this is merged."})
         return {"saved": "pr", "url": pr["html_url"]}
+
+
+def import_preview(text: str, current: str) -> list[dict]:
+    """The checks in a pasted argus.yml, each marked new, already here (by name
+    or by what it probes) or unusable, with the reason. Sites this config does
+    not have are dropped rather than refused."""
+    try:
+        doc = _yaml().load(text) or {}
+    except Exception as e:  # yaml errors, shown to the owner
+        raise EditError(f"that is not YAML Argus can read: {e}") from None
+    raw = doc.get("checks") if isinstance(doc, dict) else None
+    if not isinstance(raw, list):
+        raise EditError("no checks: list in that text")
+    here = validate(current) if current.strip() else cfg.Config()
+    names = {c.name for c in here.checks}
+    targets = {(c.kind, c.target.rstrip("/")) for c in here.checks}
+    out = []
+    for e in raw:
+        if not isinstance(e, dict):
+            continue
+        entry = {k: v for k, v in dict(e).items()}
+        if entry.get("site") and entry["site"] not in here.sites:
+            entry.pop("site")
+        try:
+            c = cfg.Check.model_validate(entry)
+        except Exception as err:  # pydantic: say which field
+            out.append({"name": str(entry.get("name", "?")), "state": "invalid",
+                        "why": str(err).splitlines()[0][:200], "entry": None})
+            continue
+        state = ("exists" if c.name in names else
+                 "covered" if (c.kind, c.target.rstrip("/")) in targets else "new")
+        out.append({"name": c.name, "state": state, "kind": c.kind, "target": c.target,
+                    "group": c.group, "severity": c.severity,
+                    "entry": c.model_dump(mode="json", exclude_defaults=True)})
+    return out
+
+
+def import_checks(current: str, entries: list[dict]) -> str:
+    """The config with these checks added, each after its group."""
+    text = current
+    for e in entries:
+        text = upsert(text, "checks", e)
+    return text
