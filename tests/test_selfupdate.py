@@ -25,3 +25,22 @@ def test_it_knows_what_is_new_from_the_products_green_builds(monkeypatch, tmp_pa
     assert (v["latest"], v["behind"], v["up_to_date"]) == ("bbbbbbb2222", 2, False)
     assert v["changes"] == ["Newest change", "Older change"]
     assert v["host"] is None  # no companion on Argus's machine: the page shows the command
+
+
+def test_a_check_github_did_not_answer_does_not_say_up_to_date(monkeypatch, tmp_path):
+    monkeypatch.setenv("ARGUS_COMMIT", "aaaaaaa1111")
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(selfupdate.asyncio, "sleep", lambda s: real_sleep(0))
+    calls = []
+
+    def gh(req):
+        calls.append(req.url.path)
+        return httpx.Response(504)
+
+    s = Settings(sqlite3.connect(":memory:"), load_key(tmp_path / "k"))
+    su = selfupdate.SelfUpdate(s, httpx.AsyncClient(transport=httpx.MockTransport(gh)), lambda: 1.0)
+    su.latest = "aaaaaaa1111"
+    asyncio.run(su.check())
+    v = su.view([])
+    assert len(calls) == 2  # one more try
+    assert v["up_to_date"] is False and "did not answer" in v["error"]
