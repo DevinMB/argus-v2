@@ -312,3 +312,19 @@ def test_a_host_the_owner_can_rebuild_is_patched_without_a_backup(env):
     assert r.status_code == 200
     assert r.json()["safety"]["net"] == "none, by your choice: it can be rebuilt"
     assert report(c, tok, local=TUE_0305)["patch"]["run"]
+
+
+def test_a_guests_own_backup_counts_before_anything_is_linked(env):
+    # argus (CT 100) had a fresh vzdump backup, but Patch now refused because no
+    # plan was ever saved to link it.
+    c, csrf, rt, clock = env
+    pve, guest = enroll(c, csrf, "pve1"), enroll(c, csrf, "argus")
+    px = {"node": "pve1", "guests": [{"vmid": 100, "name": "argus", "type": "lxc",
+                                      "status": "running",
+                                      "backup": {"at": clock.now - 4 * 3600, "storage": "nas"}}]}
+    report(c, pve, proxmox=px)
+    report(c, guest, local=TUE_0305)
+    views = {v["name"]: v["patching"] for v in c.get("/api/companions").json()["companions"]}
+    assert views["argus"]["safety"]["ok"] is True
+    assert views["argus"]["safety"]["backup"] == "pve:pve1/100"
+    assert c.post("/api/patching/argus/now", headers=csrf).status_code == 200
