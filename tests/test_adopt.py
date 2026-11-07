@@ -62,6 +62,10 @@ class FakeRepo:
             return httpx.Response(200, json={"tree": [
                 {"path": p, "type": "blob", "sha": blob(p), "size": len(t)}
                 for p, t in self.files.items()]})
+        if path.startswith(f"{base}/contents/") and m == "GET":
+            p = path[len(f"{base}/contents/"):]
+            return (httpx.Response(200, json={"path": p}) if p in self.files
+                    else httpx.Response(404, json={}))
         if path.startswith(f"{base}/git/blobs/"):
             sha = path.rsplit("/", 1)[1]
             text = next(t for p, t in self.files.items() if blob(p) == sha)
@@ -225,6 +229,12 @@ def test_dependabot_is_one_press(env):
     msg, files = fake.commits[-1]
     assert msg.startswith("Keep stack images up to date")
     assert 'package-ecosystem: "docker-compose"' in files[".github/dependabot.yml"]
+    # A repo that already has its own config keeps it.
+    fake.files[".github/dependabot.yml"] = "version: 2\nupdates: []\n"
+    n = len(fake.commits)
+    r = c.post("/api/deploys/dependabot", headers=csrf).json()
+    assert r == {"commit": None, "existing": True}
+    assert len(fake.commits) == n
 
 
 

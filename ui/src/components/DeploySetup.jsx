@@ -121,6 +121,33 @@ function Unmatched({ session, d, hosts, onSaved }) {
   );
 }
 
+// Private images (ghcr.io/you/...): hosts need a read token to pull them, or
+// their first deploy fails with "denied".
+function PullToken({ session, d, onSaved }) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState(null);
+  if (d.pull_token_set) return null;
+  const save = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try { onSaved(await send("PUT", "/api/deploys", { pull_token: token }, session.csrf)); setToken(""); }
+    catch (err) { setError(err.message); }
+  };
+  return (
+    <form className="dform dnote" onSubmit={save}>
+      <p className="small"><strong>Private images?</strong> If your stacks use images only you can pull (ghcr.io/you/…), hosts need
+        a read token: on GitHub, Settings, Developer settings, Personal access tokens, <strong>Tokens (classic)</strong>, with
+        only <code>read:packages</code>. Skip this if every image is public.</p>
+      <div className="field-row">
+        <input type="password" value={token} onChange={(e) => setToken(e.target.value.trim())} autoComplete="off"
+               placeholder="ghp_…" aria-label="Read token for private images" />
+        <button className="btn" disabled={!token}>Save</button>
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </form>
+  );
+}
+
 const ROW = { reading: "reading its files…", checking: "checking…", committing: "saving…", done: "deployed from git now",
   blocked: "needs a fix", failed: "failed" };
 
@@ -169,6 +196,8 @@ function MoveStep({ session, hosts, d, onSaved, onDone }) {
     );
   }
   const links = projects.filter((p) => p.link).length;
+  // Match old names first, or their stacks would be copied in under new names.
+  const unmatchedFirst = (d.unmatched ?? []).some((u) => u.suggest);
   const byHost = [...new Set(projects.map((p) => p.host))];
   return (
     <>
@@ -196,10 +225,11 @@ function MoveStep({ session, hosts, d, onSaved, onDone }) {
           })}</ul>
         </div>
       ))}
+      <PullToken session={session} d={d} onSaved={onSaved} />
       <div className="actions">
-        <button className="btn btn-primary" disabled={running || picked.size === 0 || Object.keys(rows).length > 0} onClick={go}>
+        <button className="btn btn-primary" disabled={running || unmatchedFirst || picked.size === 0 || Object.keys(rows).length > 0} onClick={go}>
           {running ? "Working…" : links ? `Link and move ${picked.size}` : `Move ${picked.size} into git`}</button>
-        <span className="muted small">Hosts send their files within a minute.</span>
+        <span className="muted small">{unmatchedFirst ? "Match the names above first." : "Hosts send their files within a minute."}</span>
       </div>
     </>
   );
@@ -209,7 +239,7 @@ function UpdatesStep({ session, d }) {
   const [state, setState] = useState(null);
   const turnOn = async () => {
     setState("busy");
-    try { await send("POST", "/api/deploys/dependabot", {}, session.csrf); setState("on"); }
+    try { const r = await send("POST", "/api/deploys/dependabot", {}, session.csrf); setState(r.existing ? "existing" : "on"); }
     catch (e) { setState(e.message); }
   };
   return (
@@ -217,11 +247,12 @@ function UpdatesStep({ session, d }) {
       <p>From now on, change a stack by merging in <strong>{d.repo}</strong>: Argus deploys it to the host that runs it, within that host's own rules.</p>
       <p className="muted">Want new image versions to come to you? Dependabot opens a pull request for each one; merging it deploys it.</p>
       <div className="actions">
-        {state === "on" ? <span className="st-up">Dependabot is on in {d.repo}.</span>
+        {state === "existing" ? <span className="st-up">{d.repo} already has a Dependabot config; Argus left it as it is.</span>
+          : state === "on" ? <span className="st-up">Dependabot is on in {d.repo}.</span>
           : <button className="btn btn-primary" disabled={state === "busy"} onClick={turnOn}>Turn on Dependabot</button>}
         <a className="btn" href="#/hosts">Done</a>
       </div>
-      {state && !["busy", "on"].includes(state) && <p className="form-error" role="alert">{state}</p>}
+      {state && !["busy", "on", "existing"].includes(state) && <p className="form-error" role="alert">{state}</p>}
     </>
   );
 }

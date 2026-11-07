@@ -1070,6 +1070,11 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
     async def deploys_dependabot(request: Request, _: Admin) -> dict:
         """Dependabot in the deploy repo: a pull request for each newer image."""
         d = request.app.state.deploys
+        repo = request.app.state.settings.get("deploy.repo")
+        mine = f"/repos/{repo}/contents/.github/dependabot.yml"
+        if repo and await request.app.state.gh._get(mine, missing=(404, 409)) is not None:
+            # The owner's own config (groups, ignores) is worth more than ours.
+            return {"commit": None, "existing": True}
         try:
             sha = await d.commit({".github/dependabot.yml": DEPENDABOT},
                                  "Keep stack images up to date with Dependabot\n\n"
@@ -1080,7 +1085,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         except httpx.HTTPError as e:
             raise HTTPException(502, f"GitHub said no: {type(e).__name__}") from None
         await d.refresh()
-        return {"commit": sha}
+        return {"commit": sha, "existing": False}
 
     @app.put("/api/deploys/secrets")
     async def stack_secrets(body: StackSecrets, request: Request, _: Admin) -> dict:
