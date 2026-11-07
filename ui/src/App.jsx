@@ -77,6 +77,11 @@ function linkGroups(links = []) {
 
 export default function App() {
   const { data, error, fetchedAt, reload } = useArgus();
+  // The build this page was loaded with: when Argus updates under an open page,
+  // say so, or the old page keeps showing.
+  const [loadedBuild, setLoadedBuild] = useState(null);
+  useEffect(() => { if (data && !loadedBuild) setLoadedBuild(data.info.commit); }, [data, loadedBuild]);
+  const updatedUnder = loadedBuild && data && data.info.commit !== loadedBuild;
   const [session, setSession] = useSession();
   const [selected, select] = useSelected();
   const [view, focus] = useView();
@@ -173,6 +178,12 @@ export default function App() {
         </div>
       </header>
 
+      {updatedUnder && (
+        <p className="banner banner-info">
+          Argus was updated to {data.info.commit.slice(0, 7)}.{" "}
+          <button className="btn btn-small btn-primary" onClick={() => window.location.reload()}>Reload</button>
+        </p>
+      )}
       {error && data && <p className="banner banner-error">Showing the last good data: {error}</p>}
       {session?.signed_in && data?.start && !data.start.exported_at && data.start.done >= 2 && (
         <p className="banner banner-warn">
