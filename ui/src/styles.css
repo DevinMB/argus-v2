@@ -839,3 +839,5 @@ details.plumbing[open] > summary { margin-bottom: 4px; }
 .dhost .rows li { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .changes { margin: 0; padding-left: 18px; display: grid; gap: 3px; color: var(--muted); max-height: 14em; overflow: auto; }
 .row-main .chip { margin-left: 8px; vertical-align: 1px; }
+.secret-saved { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13.5px; }
+.secret-saved .link-button { margin-left: 0; font-size: 13px; }

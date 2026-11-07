@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,6 +63,7 @@ type Deployer struct {
 	PolicyPath   string
 	Policy       *Policy
 	PolicyErr    error
+	policyHash   string // sha256 of the policy file as last read
 	compose      func(dir string, env []string, args ...string) (string, error)
 	now          func() time.Time
 }
@@ -68,6 +71,9 @@ type Deployer struct {
 type deployState struct {
 	Results map[string]DeployResult `json:"results"` // by stack path
 	Managed map[string][]string     `json:"managed"` // stack name -> files we wrote
+	// The policy a stack was refused under (its file's sha256): a changed policy
+	// is worth another try, an unchanged one is not.
+	RefusedUnder map[string]string `json:"refused_under,omitempty"`
 }
 
 func newDeployer(stateDir string, policyPath string) *Deployer {
@@ -119,8 +125,11 @@ func (d *Deployer) due(s *deployState, st StackSpec) bool {
 	if !ok || r.Digest != st.Digest {
 		return true
 	}
-	if r.Result == "ok" || r.Result == "refused" {
-		return false // refused stays refused until the stack or the policy changes
+	if r.Result == "refused" {
+		return s.RefusedUnder[st.Path] != d.policyHash // refused until the stack or the policy changes
+	}
+	if r.Result == "ok" {
+		return false
 	}
 	return d.now().Sub(time.Unix(int64(r.At), 0)) > retryFailedAfter
 }
@@ -136,6 +145,11 @@ func (d *Deployer) Apply(plan *DeployPlan) bool {
 	}
 	if d.PolicyPath != "" { // re-read each time: a change on the host applies at once
 		d.Policy, d.PolicyErr = loadPolicy(d.PolicyPath)
+		d.policyHash = ""
+		if b, err := os.ReadFile(d.PolicyPath); err == nil {
+			sum := sha256.Sum256(b)
+			d.policyHash = hex.EncodeToString(sum[:])
+		}
 	}
 	s := d.load()
 	did := false
@@ -147,6 +161,14 @@ func (d *Deployer) Apply(plan *DeployPlan) bool {
 		r := d.one(s, st, plan.Pull)
 		r.At = float64(d.now().Unix())
 		s.Results[st.Path] = r
+		if s.RefusedUnder == nil {
+			s.RefusedUnder = map[string]string{}
+		}
+		if r.Result == "refused" {
+			s.RefusedUnder[st.Path] = d.policyHash
+		} else {
+			delete(s.RefusedUnder, st.Path)
+		}
 		_ = d.save(s)
 	}
 	return did
