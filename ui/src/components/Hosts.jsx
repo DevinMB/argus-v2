@@ -333,6 +333,9 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
     }
   };
   const who = p.elsewhere ? "elsewhere" : "argus";
+  // No backup of this host anywhere Argus looks: say where one comes from.
+  const seen = backups.find((b) => b.ref === suggested);
+  const noneSeen = !server && !p.backup && !(seen && seen.at);
   const pick = (w) => setP({ ...p, elsewhere: w === "elsewhere", enabled: w === "argus" });
   return (
     <form className="patch-form" onSubmit={save}>
@@ -351,6 +354,12 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
         </label>
       )}
       {who === "argus" && <>
+      {noneSeen && (
+        <p className="small st-failing">
+          Argus sees no backup of {host.name}.{seen ? " It is a Proxmox guest: add it to a backup job in Proxmox (Datacenter, Backup), and its backup is chosen here after the next run." : " Pick a job or timer that reports to Argus when this host's backup finishes."}
+          {" "}Or, if you could rebuild it, say it needs no backup below.
+        </p>
+      )}
       <div className="form-grid">
         <label className="field"><span>Day</span>
           <select value={p.day} onChange={(e) => set("day", Number(e.target.value))}>
@@ -439,7 +448,12 @@ function Patching({ host, session, refs, backups, reload }) {
           {pt.plan.enabled
             ? <>{pt.allowed[0].toUpperCase() + pt.allowed.slice(1)}, {DAYS[pt.plan.day]}s at {pt.plan.time} (host time).</>
             : "Not patched by Argus."}{" "}
-          <span className="muted">Safety net: {pt.safety.net}.</span>
+          {pt.safety.ok || pt.plan.backup ? <span className="muted">Safety net: {pt.safety.net}.</span> : (
+            <span className="muted">Safety net: none.{" "}
+              {session?.signed_in && !host.read_only
+                ? <><button className="link-button" onClick={() => setEditing(true)}>Link a backup</button> to patch this host.</>
+                : "Link a backup to patch this host."}</span>
+          )}
           {pt.plan.restore && !pt.safety.tested && <span className="muted"> No restore test in the last 35 days.</span>}
           {pt.plan.enabled && !pt.plan.restore && <span className="muted"> Never restore-tested: worth a try.</span>}
         </p>
@@ -467,7 +481,10 @@ function Patching({ host, session, refs, backups, reload }) {
       )}
       {editing && <PatchForm host={host} session={session} refs={refs} backups={backups} reload={reload}
                              onSaved={() => { setEditing(false); reload(); }} onCancel={() => setEditing(false)} />}
-      {error && <p className="form-error" role="alert">{error}</p>}
+      {error && (
+        <p className="form-error" role="alert">{error}{" "}
+          {!editing && !pt.safety.ok && <button className="link-button" onClick={() => { setError(null); setEditing(true); }}>Link a backup</button>}</p>
+      )}
     </section>
   );
 }
