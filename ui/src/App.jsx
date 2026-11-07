@@ -156,12 +156,16 @@ export default function App() {
           </a>
         </nav>
         <div className="top-meta">
-          <span className={`live ${error || stalled ? "live-off" : ""}`}>
-            {error ? "API unreachable" : stalled ? "scheduler stalled" : "live"}
-          </span>
-          {fetchedAt && <span className="hide-sm">updated {agoText((Date.now() - fetchedAt) / 1000)}</span>}
-          {data && <span className="hide-sm hide-md">config {data.info.config}</span>}
-          {data && <span className="hide-sm hide-md">build {data.info.commit.slice(0, 7)}</span>}
+          {(error || stalled) && <span className="top-warn">{error ? "Cannot reach Argus" : "Checks have stalled"}</span>}
+          {fetchedAt && !error && <span className="hide-sm">Updated {agoText((Date.now() - fetchedAt) / 1000)}</span>}
+          {data && (
+            <a className="top-version hide-sm" href="#/account" title={`Build ${data.info.commit}`}>
+              {data.info.version.replace(/-dev$/, "")} <span className="mono">{data.info.commit.slice(0, 7)}</span></a>
+          )}
+          {data?.version?.behind > 0 && (
+            <a className="top-update" href="#/account" title={`${data.version.behind} change${data.version.behind === 1 ? "" : "s"} since this build`}>
+              Update available</a>
+          )}
           {session && (session.signed_in
             ? <a className="top-link" href="#/account" aria-current={["account", "github", "config"].includes(view) ? "page" : undefined}>Settings</a>
             : <a className="top-link" href="#/account">{session.setup_needed ? "Set up" : "Sign in"}</a>)}

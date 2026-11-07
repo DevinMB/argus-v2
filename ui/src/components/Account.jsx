@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { send } from "../api.js";
 
 // Argus's own backup: an encrypted export, and restoring one.
@@ -77,6 +77,59 @@ function Backup({ session }) {
 }
 
 // The admin account and who may view the dashboard.
+const UPDATE = { waiting: "Asking the companion on Argus's machine…", running: "Updating: Argus restarts and comes back in a minute or two…",
+  ok: "Updated", failed: "The update failed", rolled_back: "Rolled back" };
+
+// Argus's own version, what is new, and Update Argus (done by the companion on
+// Argus's machine, which puts the old version back if the new one is unhealthy).
+function ArgusVersion({ session }) {
+  const [v, setV] = useState(null);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => send("GET", "/api/argus/version").then(setV, (e) => setError(e.message)), []);
+  useEffect(() => { load(); }, [load]);
+  const busy = ["waiting", "running"].includes(v?.update?.state);
+  useEffect(() => {
+    if (!busy) return undefined;
+    const t = setInterval(load, 5000); // Argus restarts mid-way: keep asking
+    return () => clearInterval(t);
+  }, [busy, load]);
+  if (!v) return null;
+  const act = (url) => send("POST", url, {}, session.csrf).then(setV, (e) => setError(e.message));
+  const u = v.update;
+  const fresh = u && u.state !== "waiting" && u.state !== "running" && Date.now() / 1000 - (u.finished ?? u.at) < 86400;
+  return (
+    <div className="panel" id="version">
+      <h2 className="eyebrow">Argus version</h2>
+      <p>
+        Running <span className="mono">{v.current.slice(0, 7)}</span>.{" "}
+        {v.up_to_date ? <span className="st-up">Up to date.</span>
+          : v.behind > 0 ? <strong>{v.behind} change{v.behind === 1 ? "" : "s"} since this build.</strong>
+          : v.error ? <span className="muted">{v.error}.</span> : null}
+      </p>
+      {v.changes.length > 0 && (
+        <ul className="changes small">{v.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
+      )}
+      {(busy || fresh) && (
+        <p className={`small ${u.state === "ok" ? "st-up" : busy ? "" : "st-failing"}`} role="status">
+          {UPDATE[u.state]}{u.summary && !busy ? `: ${u.summary}` : ""}</p>
+      )}
+      {session?.signed_in && v.behind > 0 && !busy && (v.host ? (
+        <div className="actions">
+          <button className="btn btn-primary" onClick={() => act("/api/argus/update")}>Update Argus</button>
+          <span className="muted small">The companion on {v.host} pulls it and restarts Argus; if the new one is not healthy within 3 minutes, the old one comes back.</span>
+        </div>
+      ) : (
+        <>
+          <p className="small muted">Add Argus's machine as a host to update from here. Until then, run this beside Argus's compose.yml:</p>
+          <pre className="snippet command">docker compose pull && docker compose up -d</pre>
+        </>
+      ))}
+      {session?.signed_in && <p><button className="link-button small" onClick={() => act("/api/argus/version/check")}>Check now</button></p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 export default function Account({ session, onSession }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -107,6 +160,8 @@ export default function Account({ session, onSession }) {
   return (
     <section className="settings">
       <h1>Account</h1>
+
+      <ArgusVersion session={session} />
 
       <div className="panel">
         <h2 className="eyebrow">Who can see the dashboard</h2>

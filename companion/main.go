@@ -118,6 +118,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 	patcher := newPatcher(stateDir, collector)
 	updater := newUpdater(client, c.URL, stateDir)
 	guests := newGuestInstaller()
+	argusUpd := newArgusUpdater(stateDir)
 	go patcher.AfterBoot() // a run that asked for a reboot finishes now
 	go checker.Loop(ctx)
 	every, failing := 60*time.Second, false
@@ -143,6 +144,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 		report.Collected = collected
 		collected = nil
 		report.GuestInstalls = guests.Take()
+		report.ArgusUpdate = argusUpd.Take()
 		reply, err := sendReport(client, c, report)
 		wait = every
 		if err != nil {
@@ -205,12 +207,21 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 				guests.Start(reply.GuestInstalls)
 			}
 		}
+		// Update Argus, when this is its machine and the policy allows.
+		if u := reply.ArgusUpdate; u != nil && !c.ReadOnly && report.Containers != nil {
+			if p, err := loadPolicy(deployer.PolicyPath); err == nil && !p.NoArgusUpdates {
+				argusUpd.Start(*u, report.Containers)
+			}
+		}
+		if argusUpd.Busy() {
+			wait = min(wait, 10*time.Second) // Argus is coming back: tell it how it went soon
+		}
 		if guests.Busy() {
 			wait = min(wait, 15*time.Second) // report each guest's result promptly
 		}
 		// Argus serves another build: take it between runs, never on a
 		// monitoring-only host or one whose policy says updates are by hand.
-		if b := reply.Companion; b != nil && !c.ReadOnly && !patcher.Busy() && !guests.Busy() && updater.Due(b.SHA256) {
+		if b := reply.Companion; b != nil && !c.ReadOnly && !patcher.Busy() && !guests.Busy() && !argusUpd.Busy() && updater.Due(b.SHA256) {
 			if p, err := loadPolicy(deployer.PolicyPath); err == nil && !p.ManualUpdates {
 				if err := updater.Update(b.SHA256); err != nil {
 					log.Error("update failed; trying again in an hour", "error", err)

@@ -71,6 +71,8 @@ Stacks it deployed keep running; their folders under `/var/lib/argus-companion/s
 
 ## Upgrade
 
+**Settings, Account, Argus version** shows what changed since the build you run. When Argus's own machine runs a companion (add it as a host), **Update Argus** has that companion pull the new image and restart Argus; if the new Argus is not healthy within three minutes, the old one comes back. The header shows **Update available** when there is something new. Without a companion there, run this beside Argus's compose.yml:
+
 ```bash
 docker compose pull && docker compose up -d
 ```

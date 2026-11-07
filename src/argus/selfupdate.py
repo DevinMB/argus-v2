@@ -1,0 +1,133 @@
+"""Updating Argus from its own Settings page (design decision 16).
+
+Argus never touches Docker itself: that would take the Docker socket, root on
+its machine. The companion on the machine Argus runs on does it. Argus finds
+that host (a container running Argus's image), and when the owner presses
+Update Argus, its next signed reply asks for the update. The companion pulls
+the image, recreates the stack, waits for Argus's health check, and puts the
+old image back if Argus does not come up healthy. Argus restarts in the
+middle, so the request is kept in its settings and the new Argus records the
+result.
+
+What is newer comes from the product repo's newest green build on main (every
+green build on main pushes the image), and the changes from GitHub's compare.
+Both are public: no GitHub connection is needed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import secrets
+from collections.abc import Callable
+
+import httpx
+
+from argus.settings import Settings
+
+log = logging.getLogger("argus.selfupdate")
+
+REPO = os.environ.get("ARGUS_UPDATE_REPO", "DevinMB/argus")
+IMAGE = os.environ.get("ARGUS_IMAGE", "ghcr.io/devinmb/argus")
+STATE = "argus.update"  # the request and, later, its result
+EVERY = 3600
+GIVE_UP = 30 * 60  # a request with no result by then failed
+
+
+def own_commit() -> str:
+    return os.environ.get("ARGUS_COMMIT", "unknown")
+
+
+class SelfUpdate:
+    def __init__(self, settings: Settings, client: httpx.AsyncClient,
+                 clock: Callable[[], float]) -> None:
+        self.settings, self.client, self.clock = settings, client, clock
+        self.latest: str | None = None
+        self.changes: list[str] = []
+        self.behind = 0
+        self.checked_at: float | None = None
+        self.error = ""
+
+    async def check(self) -> None:
+        """The newest green build on main and what changed since this one."""
+        api = "https://api.github.com/repos/" + REPO
+        try:
+            r = await self.client.get(f"{api}/actions/runs", params={
+                "branch": "main", "status": "success", "event": "push", "per_page": 1},
+                timeout=20)
+            r.raise_for_status()
+            runs = r.json().get("workflow_runs") or []
+            self.latest = runs[0]["head_sha"] if runs else None
+            self.changes, self.behind = [], 0
+            mine = own_commit()
+            if self.latest and mine != "unknown" and not self.latest.startswith(mine[:12]):
+                c = await self.client.get(f"{api}/compare/{mine}...{self.latest}", timeout=20)
+                c.raise_for_status()
+                body = c.json()
+                self.behind = int(body.get("ahead_by", 0))
+                self.changes = [x["commit"]["message"].splitlines()[0]
+                                for x in reversed(body.get("commits") or [])][:20]
+            self.error = ""
+        except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
+            self.error = f"could not ask GitHub what is new: {type(e).__name__}"
+        self.checked_at = self.clock()
+
+    async def run_forever(self) -> None:
+        while True:
+            await self.check()
+            await asyncio.sleep(EVERY)
+
+    @staticmethod
+    def host_of(views: list[dict]) -> tuple[dict, dict] | None:
+        """The host whose companion runs Argus, and Argus's container on it."""
+        for v in views:
+            if v["read_only"] or v["status"] != "ok":
+                continue
+            for c in (v["report"] or {}).get("containers") or []:
+                if c.get("image", "").split(":")[0] == IMAGE and c.get("project"):
+                    return v, c
+        return None
+
+    def request(self, host: str, container: dict) -> dict:
+        req = {"id": secrets.token_hex(8), "host": host, "image": container["image"],
+               "project": container["project"], "from": own_commit(), "to": self.latest or "",
+               "at": self.clock(), "state": "waiting", "summary": ""}
+        self.settings.set(STATE, req)
+        return req
+
+    def state(self) -> dict | None:
+        s = self.settings.get(STATE)
+        if s and s["state"] in ("waiting", "running") and self.clock() - s["at"] > GIVE_UP:
+            s = {**s, "state": "failed", "summary": "no word from the companion for 30 minutes"}
+            self.settings.set(STATE, s)
+        return s
+
+    def to_send(self, host: str) -> dict | None:
+        s = self.state()
+        if s and s["host"] == host and s["state"] in ("waiting", "running"):
+            if s["state"] == "waiting":
+                self.settings.set(STATE, {**s, "state": "running"})
+            return {k: s[k] for k in ("id", "image", "project")}
+        return None
+
+    def result(self, host: str, rep: dict | None) -> None:
+        s = self.settings.get(STATE)
+        if not rep or not s or s["host"] != host or rep.get("id") != s["id"]:
+            return
+        if rep.get("state") in ("ok", "failed", "rolled_back") and s["state"] != rep["state"]:
+            self.settings.set(STATE, {**s, "state": rep["state"],
+                                      "summary": str(rep.get("summary", ""))[:500],
+                                      "log": str(rep.get("log", ""))[-8000:],
+                                      "finished": self.clock()})
+            log.info("Argus update on %s: %s", host, rep["state"])
+
+    def view(self, views: list[dict]) -> dict:
+        found = self.host_of(views)
+        mine = own_commit()
+        return {"current": mine, "latest": self.latest, "behind": self.behind,
+                "changes": self.changes, "checked_at": self.checked_at, "error": self.error,
+                "up_to_date": bool(self.latest) and self.latest.startswith(mine[:12]),
+                "host": found[0]["name"] if found else None,
+                "image": found[1]["image"] if found else f"{IMAGE}:2",
+                "update": self.state()}
