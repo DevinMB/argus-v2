@@ -191,7 +191,10 @@ class Patching:
             return {"net": net, "ok": ok, "snapshot": "", "backup": GUESTS, "backup_age": None,
                     "fresh": ok, "backup_days": p["backup_days"], "guests": guests,
                     "restore": "", "tested_age": None, "tested": False}
-        backup_age = self._age(p["backup"]) if p["backup"] else None
+        # Nothing linked: a Proxmox guest's own backup, the one the page shows, counts.
+        ref = p["backup"] or self.suggest(host, report, self.pve_backups(
+            self.rt.companions.views()))
+        backup_age = self._age(ref) if ref else None
         tested_age = self._age(p["restore"]) if p["restore"] else None
         fresh = backup_age is not None and backup_age < p["backup_days"] * 86400
         tested = tested_age is not None and tested_age < TESTED
@@ -199,14 +202,14 @@ class Patching:
             net = f"a {snapshot} snapshot before each run"
         elif fresh:
             net = "a recent backup"
-        elif p["backup"] and backup_age is not None:
+        elif ref and backup_age is not None:
             net = f"its backup is {int(backup_age // 86400)} days old (limit {p['backup_days']})"
         elif p["backup"]:
             net = "its backup has never reported"
         else:
             net = "none: link a backup to patch this host"
         return {"net": net, "ok": bool(snapshot) or fresh, "snapshot": snapshot,
-                "backup": p["backup"], "backup_age": backup_age, "fresh": fresh,
+                "backup": ref, "backup_age": backup_age, "fresh": fresh,
                 "backup_days": p["backup_days"],
                 "restore": p["restore"], "tested_age": tested_age, "tested": tested}
 
@@ -283,7 +286,7 @@ class Patching:
         if not why and not safety["ok"]:
             age = safety["backup_age"]
             why = (safety["net"] if p["backup"] == GUESTS
-                   else f"its backup ({p['backup']}) is {int(age // 86400)} days old,"
+                   else f"its backup ({safety['backup']}) is {int(age // 86400)} days old,"
                    f" over its limit of {p['backup_days']}" if age is not None
                    else f"its backup ({p['backup']}) has never reported" if p["backup"]
                    else "it has no backup linked")
