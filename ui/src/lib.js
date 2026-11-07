@@ -418,7 +418,8 @@ export function hostSentence(host) {
     const fullest = Math.max(...disks.map((d) => (d.total ? d.used / d.total : 0)));
     parts.push(`${disks.length === 1 ? "disk" : `${disks.length} disks, fullest`} ${Math.round(fullest * 100)}% used`);
   }
-  if (r.failed_units?.length) parts.push(`${r.failed_units.length} failed systemd unit${r.failed_units.length === 1 ? "" : "s"}`);
+  const units = failedUnits(host);
+  if (units.length) parts.push(`${units.length} failed systemd unit${units.length === 1 ? "" : "s"}`);
   const p = r.updates?.pending;
   if (p) parts.push(`${p} update${p === 1 ? "" : "s"} waiting${r.updates.security ? ` (${r.updates.security} security)` : ""}`);
   if (r.reboot_required) parts.push("needs a reboot");
@@ -446,7 +447,8 @@ export function attention(host) {
   const ignored = host.ignored ?? [];
   const bad = (r.containers ?? []).filter((c) => !ignored.includes(c.name) && containerTrouble(c)).length;
   if (bad) out.push(["down", `${bad} container${bad === 1 ? "" : "s"} down`]);
-  if (r.failed_units?.length) out.push(["down", `${r.failed_units.length} failed unit${r.failed_units.length === 1 ? "" : "s"}`]);
+  const units = failedUnits(host);
+  if (units.length) out.push(["down", `${units.length} failed unit${units.length === 1 ? "" : "s"}`]);
   const last = host.patching?.runs?.[0];
   if (last?.result === "failed") out.push(["down", "last patch run failed"]);
   for (const d of r.disks ?? []) {
@@ -549,3 +551,9 @@ export function guestsNet(host, days, now = Date.now() / 1000) {
   });
 }
 
+
+// Failed systemd units the owner has not set aside (Ignore on the host page).
+export function failedUnits(host) {
+  const ignored = host.ignored ?? [];
+  return (host.report?.failed_units ?? []).filter((u) => !ignored.includes(`unit:${u}`));
+}
