@@ -39,13 +39,15 @@ class FakeRepo:
                 self.commits.append((body["message"], {"README.md": self.files["README.md"]}))
                 return httpx.Response(201, json={"commit": {"sha": self.head}})
             if path.endswith("/git/trees"):
-                self.pending = {e["path"]: e["content"] for e in body["tree"]}
+                self.pending = {e["path"]: e.get("content") for e in body["tree"]}
                 return httpx.Response(201, json={"sha": "t"})
             if path.endswith("/git/commits"):
                 self.commits.append((body["message"], dict(self.pending)))
                 return httpx.Response(201, json={"sha": "b" * 40})
             if path.endswith("/git/refs/heads/main"):
-                self.files.update(self.pending)
+                self.files.update({p: t for p, t in self.pending.items() if t is not None})
+                for p in [p for p, t in self.pending.items() if t is None]:
+                    self.files.pop(p, None)
                 self.head = "b" * 40
                 return httpx.Response(200, json={})
         blob = lambda p: hashlib.sha256(self.files[p].encode()).hexdigest()  # noqa: E731
@@ -224,3 +226,29 @@ def test_dependabot_is_one_press(env):
     assert msg.startswith("Keep stack images up to date")
     assert 'package-ecosystem: "docker-compose"' in files[".github/dependabot.yml"]
 
+
+
+def test_a_repo_that_names_a_host_differently_is_matched_up(env):
+    # An existing stacks repo from before Argus: hosts/docker-1-250 is the host
+    # Argus knows as nas.
+    c, csrf, tok, fake = env
+    fake.files = {"hosts/docker-1-250": "sites/chris/media\n",
+                  "sites/chris/media/compose.yml": COMPOSE, "hosts/gone": "sites/chris/old\n"}
+    c.portal.call(c.app.state.deploys.refresh)
+    report(c, tok)
+    view = c.get("/api/deploys").json()
+    assert view["unmatched"] == [
+        {"host": "docker-1-250", "stacks": ["sites/chris/media"], "suggest": "nas", "taken": False},
+        {"host": "gone", "stacks": ["sites/chris/old"], "suggest": None, "taken": False}]
+    r = c.post("/api/deploys/hosts", headers=csrf, json={"old": "docker-1-250", "new": "nas"})
+    assert r.status_code == 200
+    msg, files = fake.commits[-1]
+    assert msg.startswith("Rename hosts/docker-1-250 to hosts/nas")
+    assert files == {"hosts/nas": "sites/chris/media\n", "hosts/docker-1-250": None}
+    # Now nas's running media project is the repo's: one to link, not to move.
+    (host,) = c.get("/api/companions").json()["companions"]
+    assert host["adoptable"][0]["link"] == "sites/chris/media"
+    assert c.post("/api/deploys/hosts", headers=csrf, json={"old": "gone"}).status_code == 200
+    assert fake.commits[-1][1] == {"hosts/gone": None}
+    assert c.post("/api/deploys/hosts", headers=csrf,
+                  json={"old": "x", "new": "nobody"}).status_code == 404

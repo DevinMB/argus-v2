@@ -88,10 +88,43 @@ function TokenStep({ session, d, onSaved }) {
   );
 }
 
-const ROW = { reading: "reading its files…", checking: "checking…", committing: "moving into git…", done: "in git",
+// hosts/ files that name a host Argus does not know: an old name, or a host gone.
+function Unmatched({ session, d, hosts, onSaved }) {
+  const [pick, setPick] = useState(() => Object.fromEntries(d.unmatched.map((u) => [u.host, u.suggest ?? ""])));
+  const [error, setError] = useState(null);
+  const act = async (old, nu) => {
+    setError(null);
+    try { onSaved(await send("POST", "/api/deploys/hosts", { old, new: nu || null }, session.csrf)); }
+    catch (e) { setError(e.message); }
+  };
+  if (!d.unmatched.length) return null;
+  return (
+    <div className="dhost">
+      <h3 className="eyebrow">names in the repo Argus does not know</h3>
+      <p className="small muted">Your repo lists stacks for these, but no host in Argus has the name. Tell Argus which host each is, and it renames the file in the repo.</p>
+      <ul className="rows">{d.unmatched.map((u) => (
+        <li key={u.host}>
+          <span className="dot dot-failing" />
+          <span className="row-main mono">hosts/{u.host}<span className="row-sub muted">{u.stacks.length} stack{u.stacks.length === 1 ? "" : "s"}: {u.stacks.map((x) => x.split("/").pop()).join(", ")}</span></span>
+          <span className="row-note">
+            <select value={pick[u.host]} onChange={(e) => setPick({ ...pick, [u.host]: e.target.value })} aria-label={`Host for ${u.host}`}>
+              <option value="">Not a host any more</option>
+              {hosts.map((h) => <option key={h.name} value={h.name}>{h.name}</option>)}
+            </select></span>
+          <span className="row-act">
+            <button className={`btn btn-small${pick[u.host] ? " btn-primary" : ""}`} onClick={() => act(u.host, pick[u.host])}>
+              {pick[u.host] ? `Rename to ${pick[u.host]}` : "Remove from the repo"}</button></span>
+        </li>
+      ))}</ul>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+const ROW = { reading: "reading its files…", checking: "checking…", committing: "saving…", done: "deployed from git now",
   blocked: "needs a fix", failed: "failed" };
 
-function MoveStep({ session, hosts, onDone }) {
+function MoveStep({ session, hosts, d, onSaved, onDone }) {
   // Argus's own stack stays out: deploying itself would restart it mid-deploy; it updates from Settings.
   const isArgus = (h, p) => (h.report?.containers ?? []).some((c) => c.project === p.project && c.image.startsWith("ghcr.io/devinmb/argus"));
   const projects = hosts.flatMap((h) => (h.adoptable ?? []).filter((p) => !isArgus(h, p))
@@ -128,12 +161,19 @@ function MoveStep({ session, hosts, onDone }) {
     onDone();
   };
   if (!projects.length && !Object.keys(rows).length) {
-    return <p className="muted">No Compose projects are running outside Argus on your hosts. Add stacks to the repo yourself, or add the hosts that run them first.</p>;
+    return (
+      <>
+        <Unmatched session={session} d={d} hosts={hosts} onSaved={onSaved} />
+        <p className="muted">Nothing left to move: every Compose project on your hosts is deployed from git.</p>
+      </>
+    );
   }
+  const links = projects.filter((p) => p.link).length;
   const byHost = [...new Set(projects.map((p) => p.host))];
   return (
     <>
-      <p className="muted">These run on your hosts today. Each moves in place: its compose file goes to git, its <code>.env</code> secrets stay
+      <Unmatched session={session} d={d} hosts={hosts} onSaved={onSaved} />
+      <p className="muted">These run on your hosts today. Those already in the repo are linked: Argus takes over deploying them where they run. The rest move in place: its compose file goes to git, its <code>.env</code> secrets stay
         in Argus, and its containers keep running where they are. No restart, no data moved. Argus itself stays out; it updates from Settings.</p>
       {byHost.map((h) => (
         <div key={h} className="dhost">
@@ -145,7 +185,7 @@ function MoveStep({ session, hosts, onDone }) {
                 <input type="checkbox" checked={picked.has(p.key)} disabled={running || !!r}
                        onChange={(e) => setPicked((s) => { const n = new Set(s); e.target.checked ? n.add(p.key) : n.delete(p.key); return n; })}
                        aria-label={p.project} />
-                <span className="row-main">{p.project}
+                <span className="row-main">{p.project}{p.link && <span className="chip">in the repo: link</span>}
                   <span className="row-sub muted">{p.containers.length} container{p.containers.length === 1 ? "" : "s"} · <span className="mono">{p.dir}</span></span></span>
                 <span className={`row-note ${r?.state === "done" ? "st-up" : ["blocked", "failed"].includes(r?.state) ? "st-failing" : "muted"}`}>
                   {r ? ROW[r.state] : ""}</span>
@@ -158,7 +198,7 @@ function MoveStep({ session, hosts, onDone }) {
       ))}
       <div className="actions">
         <button className="btn btn-primary" disabled={running || picked.size === 0 || Object.keys(rows).length > 0} onClick={go}>
-          {running ? "Moving…" : `Move ${picked.size} into git`}</button>
+          {running ? "Working…" : links ? `Link and move ${picked.size}` : `Move ${picked.size} into git`}</button>
         <span className="muted small">Hosts send their files within a minute.</span>
       </div>
     </>
@@ -200,7 +240,11 @@ export default function DeploySetup({ session, data, reload }) {
   if (!d) return <section className="settings"><h1>Deploy from git</h1><p className="muted">Loading…</p></section>;
   const hosts = data?.companions?.companions ?? [];
   const inGit = Object.values(d.hosts ?? {}).reduce((n, s) => n + s.length, 0);
-  const steps = [!!d.repo, d.write_token_set, moved || inGit > 0];
+  // Step 3 is done when nothing is left: no project outside git (Argus itself
+  // aside), and no hosts/ file under a name Argus does not know.
+  const left = hosts.reduce((n, h) => n + (h.adoptable ?? []).filter((p) => !(h.report?.containers ?? [])
+    .some((c) => c.project === p.project && c.image.startsWith("ghcr.io/devinmb/argus"))).length, 0);
+  const steps = [!!d.repo, d.write_token_set, inGit > 0 && left === 0 && !(d.unmatched ?? []).length];
   const current = editing ?? steps.findIndex((s) => !s);
   const at = current === -1 ? 3 : current;
   const saved = (v) => { setD(v); setEditing(null); };
@@ -215,9 +259,10 @@ export default function DeploySetup({ session, data, reload }) {
         <Step n={2} title="Let Argus write to it" done={steps[1]} open={at === 1} summary="token saved" onChange={() => setEditing(1)}>
           <TokenStep session={session} d={d} onSaved={saved} />
         </Step>
-        <Step n={3} title="Move your stacks in" done={steps[2]} open={at === 2} summary={`${inGit} stack${inGit === 1 ? "" : "s"} in git`}
+        <Step n={3} title="Move your stacks in" done={steps[2]} open={at === 2} summary={`${inGit} stack${inGit === 1 ? "" : "s"} in git, nothing left`}
               onChange={() => setEditing(2)}>
-          <MoveStep session={session} hosts={hosts}
+          <MoveStep session={session} hosts={hosts} d={{ ...d, unmatched: d.unmatched ?? [] }}
+                    onSaved={(v) => { setD(v); reload(); }}
                     onDone={() => { setMoved(true); reload(); send("GET", "/api/deploys").then(setD, () => {}); }} />
           {moved && <p><button className="btn" onClick={() => setEditing(null)}>Next</button></p>}
         </Step>
