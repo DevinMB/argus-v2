@@ -201,6 +201,12 @@ class GuestInstall(BaseModel):
     url: str = Field(max_length=300, pattern=r"^https?://[A-Za-z0-9.:\[\]-]+(/[A-Za-z0-9._~/-]*)?$")
 
 
+class HostRename(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    old: str = Field(pattern=r"^[A-Za-z0-9._-]{1,100}$")
+    new: str | None = Field(None, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")  # None: remove it
+
+
 class Ignore(BaseModel):
     model_config = ConfigDict(extra="forbid")
     container: str = Field(min_length=1, max_length=255)
@@ -1014,6 +1020,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
                 "write_token_set": s.has_secret(WRITE_TOKEN),
                 "hosts": d.snapshot.hosts if d.snapshot else {},
                 "empty": bool(d.snapshot and d.snapshot.empty),
+                "unmatched": d.unmatched(rt(request).companions.views()),
                 "connected": request.app.state.gh.connected}
 
     @app.get("/api/deploys")
@@ -1044,6 +1051,19 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         elif body.write_token == "":
             s.set_secret(WRITE_TOKEN, None)
         await request.app.state.deploys.refresh()
+        return deploy_view(request)
+
+    @app.post("/api/deploys/hosts")
+    async def deploys_rename_host(body: HostRename, request: Request, _: Admin) -> dict:
+        """A hosts/ file under an old name: give it the name Argus knows, or remove it."""
+        if body.new and body.new not in rt(request).companions.names():
+            raise HTTPException(404, f"no host called {body.new}")
+        try:
+            await request.app.state.deploys.rename_host(body.old, body.new)
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from None
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"GitHub said no: {type(e).__name__}") from None
         return deploy_view(request)
 
     @app.post("/api/deploys/dependabot")

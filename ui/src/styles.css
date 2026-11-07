@@ -837,3 +837,4 @@ details.plumbing[open] > summary { margin-bottom: 4px; }
 .dhost { display: grid; gap: 4px; }
 .dhost .rows li { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .changes { margin: 0; padding-left: 18px; display: grid; gap: 3px; color: var(--muted); max-height: 14em; overflow: auto; }
+.row-main .chip { margin-left: 8px; vertical-align: 1px; }

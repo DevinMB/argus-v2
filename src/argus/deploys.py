@@ -305,7 +305,7 @@ class Deploys:
                     changed[key] = text
         return changed
 
-    async def commit(self, files: dict[str, str], message: str) -> str:
+    async def commit(self, files: dict[str, str | None], message: str) -> str:
         """Write files to the deploy repo in one commit, fast-forward only, with
         the deploy repo's own write token. Refuses when the repo moved since
         Argus read it."""
@@ -335,7 +335,9 @@ class Deploys:
         commit = await get(f"{base}/git/commits/{parent}")
         tree = (await c.post(f"{base}/git/trees", headers=h, auth=None, json={
             "base_tree": commit["tree"]["sha"],
-            "tree": [{"path": p, "mode": "100644", "type": "blob", "content": t}
+            # None removes the file (a renamed hosts/ file, say).
+            "tree": [{"path": p, "mode": "100644", "type": "blob", "content": t} if t is not None
+                     else {"path": p, "mode": "100644", "type": "blob", "sha": None}
                      for p, t in sorted(files.items())]})).raise_for_status().json()
         new = (await c.post(f"{base}/git/commits", headers=h, auth=None, json={
             "message": message, "tree": tree["sha"], "parents": [parent]}))
@@ -345,6 +347,46 @@ class Deploys:
                        json={"sha": new["sha"], "force": False})).raise_for_status()
         log.info("committed to %s: %s", src.full_name, message.splitlines()[0])
         return new["sha"]
+
+    def unmatched(self, companions: list[dict]) -> list[dict]:
+        """hosts/ files in the repo that name no host Argus knows (a host renamed,
+        or one gone), each with the host that runs its stacks, when one does."""
+        if self.snapshot is None:
+            return []
+        names = {c["name"] for c in companions}
+        out = []
+        for h, stacks in sorted(self.snapshot.hosts.items()):
+            if h in names:
+                continue
+            wanted = {s.rsplit("/", 1)[-1] for s in stacks}
+            best, score = None, 0
+            for c in companions:
+                containers = (c.get("report") or {}).get("containers") or []
+                running = {x.get("project") for x in containers}
+                n = len(wanted & running)
+                if n > score:
+                    best, score = c["name"], n
+            out.append({"host": h, "stacks": stacks, "suggest": best,
+                        "taken": bool(best and best in self.snapshot.hosts)})
+        return out
+
+    async def rename_host(self, old: str, new: str | None) -> str:
+        """Rename hosts/<old> to hosts/<new> in the repo (appending to new's list
+        if it has one), or remove it when new is None."""
+        snap = self.snapshot
+        if snap is None or old not in snap.hosts_text:
+            raise ValueError(f"the deploy repo has no hosts/{old}")
+        files: dict[str, str | None] = {f"hosts/{old}": None}
+        if new:
+            mine = snap.hosts_text[old].rstrip("\n") + "\n"
+            theirs = snap.hosts_text.get(new, "")
+            files[f"hosts/{new}"] = (theirs.rstrip("\n") + "\n" if theirs.strip() else "") + mine
+            msg = f"Rename hosts/{old} to hosts/{new}\n\nArgus knows the host as {new}.\n"
+        else:
+            msg = f"Remove hosts/{old}\n\nNo host runs it any more.\n"
+        sha = await self.commit(files, msg)
+        await self.refresh()
+        return sha
 
     async def bump(self, builds: list[tuple[str, str, str]]) -> str | None:
         """Commit the new tags to the deploy repo in one commit. Returns the
