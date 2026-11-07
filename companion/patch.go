@@ -58,7 +58,10 @@ func newPatcher(stateDir string, c *Collector) *Patcher {
 		reboot: rebootHost}
 }
 
-// runOutside runs a command in a transient unit when systemd is there.
+// runOutside runs a command outside the service's read-only sandbox: in a
+// transient unit when systemd is there; when systemd refuses (Rocky 9's does
+// for this sandboxed service: "Failed to start transient service unit:
+// Connection reset by peer"), in the host's own mount namespace, PID 1's.
 func runOutside(timeout time.Duration, env []string, name string, args ...string) (string, error) {
 	if _, err := exec.LookPath("systemd-run"); err == nil {
 		if _, err := os.Stat("/run/systemd/system"); err == nil {
@@ -68,10 +71,34 @@ func runOutside(timeout time.Duration, env []string, name string, args ...string
 				full = append(full, "--setenv="+e)
 			}
 			full = append(append(full, "--", name), args...)
-			return runIn("/", nil, timeout+time.Minute, "systemd-run", full...)
+			out, err := runIn("/", nil, timeout+time.Minute, "systemd-run", full...)
+			if err == nil || !strings.Contains(out, "Failed to start transient") {
+				return out, err
+			}
+			if o, ok := runInHostMounts(timeout, env, name, args...); ok {
+				return o.out, o.err
+			}
+			return out, err
 		}
 	}
-	return runIn("/", env, timeout, name, args...)
+	return runIn("/", env, timeout, name, args...) // OpenRC: no sandbox to leave
+}
+
+type result struct {
+	out string
+	err error
+}
+
+// runInHostMounts runs the command in PID 1's mount namespace, where the
+// filesystem is writable as the host sees it. false: nsenter is not there.
+func runInHostMounts(timeout time.Duration, env []string, name string, args ...string) (result, bool) {
+	if _, err := exec.LookPath("nsenter"); err != nil {
+		return result{}, false
+	}
+	full := append([]string{"--target", "1", "--mount", "--", "env"}, env...)
+	full = append(append(full, name), args...)
+	out, err := runIn("/", nil, timeout, "nsenter", full...)
+	return result{out, err}, true
 }
 
 func (p *Patcher) path() string { return filepath.Join(p.StateDir, "patch.json") }
