@@ -188,6 +188,7 @@ func (p *Patcher) Start(g *PatchGrant) {
 		}
 	}
 	after := p.collector.pendingUpdates()
+	p.collector.SetUpdates(after)
 	s.Summary = summarize(g.Level, before, after)
 
 	if gone := p.waitHealthy(s.Before); len(gone) > 0 {

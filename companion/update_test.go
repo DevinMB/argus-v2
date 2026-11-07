@@ -65,3 +65,11 @@ func TestUpdateInstallsOnlyTheBuildArgusSigned(t *testing.T) {
 		t.Errorf("left behind: %v", left)
 	}
 }
+
+func TestAPatchRunsFreshCountIsKept(t *testing.T) {
+	c, none := newCollector(), 0
+	c.SetUpdates(&Updates{Pending: &none, Manager: "apt"})
+	if *c.updates.Pending != 0 || !c.updatesNext.After(time.Now().Add(updatesEvery-time.Minute)) {
+		t.Fatalf("the count after a patch run must be kept until the next hourly look: %+v %v", c.updates, c.updatesNext)
+	}
+}
