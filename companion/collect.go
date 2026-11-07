@@ -84,6 +84,8 @@ type Collector struct {
 	RebootFile   string
 	Proxmox      proxmoxPaths
 	run          func(name string, args ...string) (string, int, error)
+	// dnf check-update with a fresh cache, outside the read-only sandbox.
+	dnfFresh func() (string, int, error)
 
 	updates     *Updates
 	updatesNext time.Time
@@ -104,6 +106,7 @@ func newCollector() *Collector {
 		RebootFile:   "/var/run/reboot-required",
 		Proxmox:      defaultProxmoxPaths,
 		run:          runCommand,
+		dnfFresh:     dnfFresh,
 	}
 }
 
@@ -363,8 +366,16 @@ func (c *Collector) pendingUpdates() *Updates {
 		// writes its log even for a cache-only read: point the log there.
 		logdir := "--setopt=logdir=" + defaultState
 		out, code, err := c.run("dnf", "-q", "-C", logdir, "check-update")
+		if err == nil && code == 1 {
+			// Cache-only fails when the cache is empty or expired (nothing keeps it
+			// fresh on many hosts): refresh it outside the sandbox, as a patch run does.
+			out, code, err = c.dnfFresh()
+		}
 		if err != nil || (code != 0 && code != 100) {
 			u.Error = commandError("dnf check-update", code, err)
+			if code > 0 {
+				u.Error += ": " + lastWords(out) // what dnf said, not only that it failed
+			}
 			return u
 		}
 		n := parseDnfCheckUpdate(out)
@@ -391,6 +402,36 @@ func (c *Collector) pendingUpdates() *Updates {
 func has(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// dnfFresh runs dnf check-update with a cache refresh in a transient unit
+// outside the service's read-only filesystem, and returns its output and exit code.
+func dnfFresh() (string, int, error) {
+	out, err := runOutside(5*time.Minute, []string{"LC_ALL=C"}, "sh", "-c", "dnf -q check-update 2>&1; echo argus-rc=$?")
+	i := strings.LastIndex(out, "argus-rc=")
+	if i < 0 {
+		if err == nil {
+			err = errors.New("no exit code from dnf")
+		}
+		return out, -1, err
+	}
+	code, cerr := strconv.Atoi(strings.TrimSpace(out[i+len("argus-rc="):]))
+	if cerr != nil {
+		return out, -1, cerr
+	}
+	return out[:i], code, nil
+}
+
+func lastWords(s string) string {
+	lines := nonEmptyLines(s)
+	if len(lines) == 0 {
+		return "no output"
+	}
+	l := strings.TrimSpace(lines[len(lines)-1])
+	if len(l) > 200 {
+		l = l[:200]
+	}
+	return l
 }
 
 func commandError(what string, code int, err error) string {

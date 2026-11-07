@@ -73,3 +73,24 @@ func TestAPatchRunsFreshCountIsKept(t *testing.T) {
 		t.Fatalf("the count after a patch run must be kept until the next hourly look: %+v %v", c.updates, c.updatesNext)
 	}
 }
+
+func TestAnExpiredDnfCacheIsRefreshedAndARealErrorShown(t *testing.T) {
+	if !has("dnf") {
+		// pendingUpdates picks the package manager from the host; on a host
+		// without dnf, check the pieces instead.
+		if got := lastWords("Error: Failed to download metadata for repo 'appstream'\n\n"); got != "Error: Failed to download metadata for repo 'appstream'" {
+			t.Fatal(got)
+		}
+		return
+	}
+	c := newCollector()
+	c.run = func(string, ...string) (string, int, error) { return "", 1, nil }
+	c.dnfFresh = func() (string, int, error) { return "pkg.x86_64 1.2 baseos\n", 100, nil }
+	if u := c.pendingUpdates(); u.Error != "" || *u.Pending != 1 {
+		t.Fatalf("%+v", u)
+	}
+	c.dnfFresh = func() (string, int, error) { return "Error: Failed to download metadata for repo 'appstream'", 1, nil }
+	if u := c.pendingUpdates(); !strings.Contains(u.Error, "Failed to download metadata") {
+		t.Fatalf("%+v", u)
+	}
+}
