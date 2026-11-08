@@ -630,3 +630,14 @@ export function duplicates(checks) {
   return Object.values(by).filter((l) => l.length > 1)
     .map((l) => [...l].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name)));
 }
+
+// Each host's machine: a guest's Proxmox server, else the host itself, as on
+// the Hosts page. Checks grouped by host sit under these.
+export function machineOf(hosts = []) {
+  const out = {};
+  for (const { host, guests } of hostTree(hosts)) {
+    out[host.name] = host.name;
+    for (const g of guests) if (g.host) out[g.host.name] = host.name;
+  }
+  return out;
+}
