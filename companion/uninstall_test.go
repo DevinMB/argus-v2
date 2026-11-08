@@ -44,7 +44,7 @@ func TestUninstallHandsStacksBackThenRemovesEverything(t *testing.T) {
 	put(t, filepath.Join(root, "usr/local/bin/argus-companion"), "bin")
 
 	out := runScript(t, root, handBackScript)
-	if !strings.Contains(out, "handed back web: /opt/stacks/web") || !strings.Contains(out, "handed back db: /opt/stacks/db-argus") {
+	if !strings.Contains(out, "handed back web: /opt/stacks/web") || !strings.Contains(out, "handed back db: /opt/stacks/db-argus") || strings.Contains(out, root) {
 		t.Fatalf("handback said: %s", out)
 	}
 	if b, _ := os.ReadFile(filepath.Join(root, "opt/stacks/web/.env")); string(b) != "PASSWORD=x" {
@@ -74,8 +74,11 @@ func TestUninstallKeepsAStackItCouldNotMove(t *testing.T) {
 	put(t, filepath.Join(root, "opt/stacks/web-argus/compose.yml"), "mine too")
 	put(t, filepath.Join(state, "deploys.json"), "{}")
 
-	if out := runScript(t, root, handBackScript); !strings.Contains(out, "kept web") {
-		t.Fatalf("handback said: %s", out)
+	cmd := exec.Command("sh", "-c", handBackScript)
+	cmd.Env = append(os.Environ(), "ARGUS_ROOT="+root)
+	b, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(b), "kept web") || !strings.Contains(string(b), "companion stays") {
+		t.Fatalf("a stack left behind must fail the handback: %v %s", err, b)
 	}
 	out := runScript(t, root, removalScript)
 	if b, _ := os.ReadFile(filepath.Join(state, "stacks/web/compose.yml")); string(b) != "argus" {
@@ -102,5 +105,18 @@ func TestTheRemovalStartsOnlyAfterArgusHasTheHandback(t *testing.T) {
 	}
 	if u.Take() != nil || u.Sent() {
 		t.Fatal("sent once only")
+	}
+}
+
+// What systemd-run gets back after its own $ expansion is the script as written.
+func TestScriptsReachTheShellAsWrittenThroughSystemdRun(t *testing.T) {
+	for _, s := range []string{handBackScript, removalScript} {
+		if strings.Contains(s, "${") || strings.Contains(s, "%") {
+			t.Fatal("no ${...} or % in a script run through systemd-run")
+		}
+		esc := systemdLiteral([]string{s})[0]
+		if strings.ReplaceAll(esc, "$$", "$") != s {
+			t.Fatal("systemd's $$ must give back every $")
+		}
 	}
 }
