@@ -93,7 +93,7 @@ describe("headline and siteNote", () => {
     expect(headline(s({ down: 1, failing: 1, unknown: 1 }))).toBe("Something is down.");
     expect(siteNote(s({ failing: 2, unknown: 1 }))).toBe("2 failing");
     expect(headline(s({ up: 3 }))).toBe("All quiet.");
-    expect(headline(s({}))).toBe("Nothing watched yet.");
+    expect(headline(s({ total: 0 }))).toBe("Nothing watched yet.");
     expect(siteNote(s({ up: 3 }))).toBe("all up");
   });
   it("a paused check is quiet: no problem, but said", () => {
