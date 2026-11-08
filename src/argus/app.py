@@ -1285,6 +1285,13 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
                 continue
             for g in ((server["report"] or {}).get("proxmox") or {}).get("guests") or []:
                 if g["status"] == "running" and g["name"] and name_from(g["name"]) in names:
+                    # A server companion from before reinstalls would enroll the guest
+                    # again with the request id as a code, and fail: wait for it.
+                    mine = os.environ.get("ARGUS_COMMIT", "")[:12]
+                    theirs = (server["report"] or {}).get("version") or ""
+                    if mine and mine != "unknown" and not theirs.endswith("+" + mine):
+                        raise HTTPException(409, f"{server['name']} is updating its companion;"
+                                                 " try again in a few minutes")
                     url = body.url.rstrip("/")
                     pin = request.app.state.tls_pin if url.startswith("https://") else None
                     raw = base64.b32encode(secrets.token_bytes(10)).decode().lower()

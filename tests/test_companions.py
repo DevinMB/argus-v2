@@ -345,18 +345,23 @@ def test_a_companion_stuck_on_an_old_build_is_named_with_the_command_that_fixes_
     assert client.get("/api/companions").json()["companions"][0]["companion_stale"] is False
 
 
-def test_reinstall_companion_goes_through_the_guests_proxmox_server(client, csrf):
+def test_reinstall_companion_goes_through_the_guests_proxmox_server(client, csrf, monkeypatch):
+    monkeypatch.setenv("ARGUS_COMMIT", "12d47a634a62aaaa")
     h = {"X-CSRF-Token": csrf}
     pve = enroll(client, new_code(client, csrf)["code"], "pve").json()
     guest = enroll(client, new_code(client, csrf)["code"], "homepage").json()
     lone = enroll(client, new_code(client, csrf)["code"], "rocky").json()
     px = {"node": "pve", "guests": [{"vmid": 105, "name": "homepage", "type": "lxc",
                                       "status": "running"}]}
-    report(client, pve["token"], proxmox=px)
     url = {"url": "https://192.168.10.18:8443"}
+    report(client, pve["token"], proxmox=px, version="2.0.0-dev+fd5c378113c9")
+    r = client.post(f"/api/companions/{guest['id']}/reinstall", headers=h, json=url)
+    assert r.status_code == 409 and "updating its companion" in r.json()["detail"]
+    report(client, pve["token"], proxmox=px, version="2.0.0-dev+12d47a634a62")
     assert client.post(f"/api/companions/{guest['id']}/reinstall", headers=h,
                        json=url).json() == {"by": "pve", "vmid": 105}
-    [ask] = report(client, pve["token"], proxmox=px)[0].json()["guest_installs"]
+    [ask] = report(client, pve["token"], proxmox=px,
+                   version="2.0.0-dev+12d47a634a62")[0].json()["guest_installs"]
     assert ask["reinstall"] is True and ask["vmid"] == 105
     r = client.post(f"/api/companions/{lone['id']}/reinstall", headers=h, json=url)
     assert r.status_code == 409 and "run the command" in r.json()["detail"]
