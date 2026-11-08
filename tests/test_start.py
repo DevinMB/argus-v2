@@ -83,3 +83,13 @@ def test_a_step_once_done_stays_done(tmp_path):
                    hidden=False, seen={"deploys"})
     steps = {s["key"]: s["done"] for s in v["steps"]}
     assert steps["deploys"] is True and steps["github"] is False
+
+
+def test_a_port_published_on_loopback_only_is_watched_from_the_host():
+    from argus.start import suggestions
+    hosts = [{"name": "lab", "address": "192.168.10.47", "status": "ok", "report": {"containers": [
+        {"name": "db", "image": "couchdb", "state": "running", "ports": [5984, 8080],
+         "local_ports": [5984]}]}}]
+    by = {s["port"]: s["check"] for s in suggestions(hosts, [])}
+    assert by[8080]["target"] == "192.168.10.47:8080" and "companion" not in by[8080]
+    assert by[5984] == {**by[5984], "target": "127.0.0.1:5984", "companion": "lab"}

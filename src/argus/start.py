@@ -65,10 +65,12 @@ def suggestions(companions: list[dict], checks, sniffer: sniff.Sniffer | None = 
                     for host, p in probed)
                 name = _name(c["name"], port, taken)
                 taken.add(name)
+                # Published on the host's loopback only: only the host's companion reaches it.
+                outside = from_argus and port not in (c.get("local_ports") or [])
                 check = {"name": name, "kind": "tcp",
-                         "target": f"{addr if from_argus else '127.0.0.1'}:{port}",
+                         "target": f"{addr if outside else '127.0.0.1'}:{port}",
                          "group": c.get("project") or h["name"],
-                         **({} if from_argus else {"companion": h["name"]})}
+                         **({} if outside else {"companion": h["name"]})}
                 out.append({
                     "host": h["name"], "container": c["name"], "port": port,
                     "covered": covered,
