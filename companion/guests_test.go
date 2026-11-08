@@ -114,3 +114,14 @@ func TestGuestInstallerRunsEachCodeOnce(t *testing.T) {
 		t.Error("results handed over twice")
 	}
 }
+
+func TestAReinstallKeepsTheGuestsEnrollment(t *testing.T) {
+	g := goodInstall()
+	g.Reinstall = true
+	if err := g.check(); err != nil {
+		t.Fatal(err)
+	}
+	if s := g.script(); strings.Contains(s, "--code") || !strings.Contains(s, "install.sh | sh -s -- --url") {
+		t.Fatalf("a reinstall must not enroll again:\n%s", s)
+	}
+}

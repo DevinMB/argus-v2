@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -53,6 +54,10 @@ type Patcher struct {
 	settle    time.Duration // how long containers get to come back
 	pkgBusy   func() bool   // a package manager is at work on the host
 	pkgWait   time.Duration // how often to look again while one is
+	// A run is going on in this process now. Busy is this, not the record on
+	// disk: a record left "running" by a restart must never block patching or
+	// self-updates (argus's companion was stuck that way, 2026-11-07).
+	active atomic.Bool
 }
 
 func newPatcher(stateDir string, c *Collector) *Patcher {
@@ -127,8 +132,11 @@ func (p *Patcher) save(s *PatchState) {
 
 // Busy says whether a run is under way here (so a second grant is ignored).
 func (p *Patcher) Busy() bool {
+	if p.active.Load() {
+		return true
+	}
 	s := p.State()
-	return s != nil && (s.State == "running" || s.State == "rebooting")
+	return s != nil && s.State == "rebooting" // the reboot this run asked for is pending
 }
 
 // healthy lists the containers running now as name or name+health.
@@ -180,6 +188,8 @@ func (p *Patcher) waitHealthy(before []string) []string {
 
 // Start runs a grant to its end (or to the reboot it asks for).
 func (p *Patcher) Start(g *PatchGrant) {
+	p.active.Store(true)
+	defer p.active.Store(false)
 	s := &PatchState{Run: g.Run, State: "running", Before: p.healthy()}
 	p.save(s)
 	fail := func(why string) {
@@ -264,6 +274,8 @@ func (p *Patcher) AfterBoot() {
 // but the package manager it started outside its sandbox may still be at work.
 // Once no package manager is left, what is still pending says how it went.
 func (p *Patcher) finishInterrupted(s *PatchState) {
+	p.active.Store(true) // settling counts as busy: no new run, no self-update meanwhile
+	defer p.active.Store(false)
 	for i := 0; i < 360 && p.pkgBusy(); i++ { // up to an hour at the usual pace
 		time.Sleep(p.pkgWait)
 	}

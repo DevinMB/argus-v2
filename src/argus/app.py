@@ -14,12 +14,14 @@ one the scheduler writes from, so SQLite needs no locking.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import hashlib
 import hmac
 import json
 import os
 import re
+import secrets
 import shlex
 import time
 from pathlib import Path
@@ -65,6 +67,9 @@ UI_DIR = Path(os.environ.get("ARGUS_UI", Path(__file__).resolve().parents[2] / "
 # The companion builds (linux-amd64, linux-arm64), put there by the image build.
 COMPANION_DIR = Path(os.environ.get("ARGUS_COMPANION_DIR", "/app/companion"))
 _BUILDS: dict[str, tuple[float, str]] = {}
+
+
+STALE_COMPANION = 3 * 3600  # self-update tries hourly: three hours behind is stuck
 
 
 def companion_sha256(arch: str) -> str:
@@ -528,6 +533,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         app.state.adoption = Adoption(settings, deploys, rt.clock)
         app.state.guests = GuestInstalls(rt.clock)
         app.state.sniffer = Sniffer(rt.clock)
+        app.state.behind = {}  # host -> when its companion first lagged this build
         app.state.selfupdate = SelfUpdate(settings, client, rt.clock)
         app.state.registry = registry(rt, gh, alerter.prometheus_test_active)
         tasks = []
@@ -1153,6 +1159,34 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
 
     # --- companions: the UI's side ---
 
+    def install_command(request: Request, url: str, code: str | None = None,
+                        read_only: bool = False) -> str:
+        """Add a host's command; without a code it only replaces the companion and
+        keeps the host's enrollment."""
+        url = url.rstrip("/")
+        pin = request.app.state.tls_pin if url.startswith("https://") else None
+        q = shlex.quote
+        fetch = f"curl -fsS -k --pinnedpubkey {q('sha256//' + pin)}" if pin else "curl -fsS"
+        args = f"--url {q(url)}" + (f" --pin {q(pin)}" if pin else "")
+        if code:
+            args += f" --code {code}"
+        if read_only:
+            args += " --read-only"
+        return f"{fetch} {q(url + '/companion/install.sh')} | sudo sh -s -- {args}"
+
+    def companion_stale(request: Request, v: dict) -> bool:
+        """A companion that has not caught up with this Argus's build for hours: its
+        self-update is failing (or it is one from before self-update), and only the
+        install command run on the host helps. Argus says so on the host's page."""
+        mine = os.environ.get("ARGUS_COMMIT", "")[:12]
+        version = ((v["report"] or {}).get("version") or "")
+        behind = request.app.state.behind
+        if not mine or mine == "unknown" or v["status"] != "ok" or version.endswith("+" + mine):
+            behind.pop(v["name"], None)
+            return False
+        since = behind.setdefault(v["name"], rt(request).clock())
+        return rt(request).clock() - since > STALE_COMPANION
+
     @app.get("/api/companions")
     async def companions(request: Request) -> dict:
         r = rt(request)
@@ -1166,10 +1200,12 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             v["patching"] = request.app.state.patching.view(v["name"], v["report"], backups)
             v["adoptable"] = [] if v["read_only"] else request.app.state.adoption.projects(v)
             v["guest_installs"] = request.app.state.guests.view(v["name"])
+            v["companion_stale"] = companion_stale(request, v)
         named = {c.companion for c in r.config.checks if c.companion}
         return {"companions": views, "backups": backups,
                 "report_every": REPORT_EVERY, "now": r.clock(),
                 "tls_pin": request.app.state.tls_pin is not None,
+                "update_command": install_command(request, str(request.base_url)),
                 "unknown": sorted(named - r.companions.names())}
 
     @app.post("/api/companions/codes")
@@ -1178,15 +1214,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             raise HTTPException(422, "a command for several hosts names each after itself; "
                                      "leave the name empty")
         code, expires = rt(request).companions.new_code(body.name, body.read_only, body.hosts)
-        url = body.url.rstrip("/")
-        pin = request.app.state.tls_pin if url.startswith("https://") else None
-        q = shlex.quote
-        fetch = f"curl -fsS -k --pinnedpubkey {q('sha256//' + pin)}" if pin else "curl -fsS"
-        args = f"--url {q(url)}" + (f" --pin {q(pin)}" if pin else "") + f" --code {code}"
-        if body.read_only:
-            args += " --read-only"
         return {"code": code, "expires": expires,
-                "command": f"{fetch} {q(url + '/companion/install.sh')} | sudo sh -s -- {args}"}
+                "command": install_command(request, body.url, code, body.read_only)}
 
     @app.delete("/api/companions/{cid}")
     async def remove_host(cid: str, request: Request, _: Admin) -> dict:
@@ -1239,6 +1268,33 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         code, _expires = r.companions.new_code(name, ttl=GIVE_UP)
         request.app.state.guests.request(server["name"], vmid, g["type"], name, url, pin, code)
         return {"ok": True, "name": name}
+
+    @app.post("/api/companions/{cid}/reinstall")
+    async def reinstall_companion(cid: str, body: GuestInstall, request: Request,
+                                  _: Admin) -> dict:
+        """Reinstall a Proxmox guest's companion through its server, keeping the
+        enrollment. Other hosts get the command to run (409, the UI shows it)."""
+        r = rt(request)
+        views = r.companions.views()
+        host = next((c for c in views if c["id"] == cid), None)
+        if host is None:
+            raise HTTPException(404, "no such host")
+        names = {host["name"], ((host["report"] or {}).get("hostname") or "").split(".")[0]}
+        for server in views:
+            if server["read_only"] or server["status"] != "ok" or server["id"] == cid:
+                continue
+            for g in ((server["report"] or {}).get("proxmox") or {}).get("guests") or []:
+                if g["status"] == "running" and g["name"] and name_from(g["name"]) in names:
+                    url = body.url.rstrip("/")
+                    pin = request.app.state.tls_pin if url.startswith("https://") else None
+                    raw = base64.b32encode(secrets.token_bytes(10)).decode().lower()
+                    # A request id in a code's shape; never a code, nothing enrolls with it.
+                    rid = "-".join(raw[i:i + 4] for i in range(0, 16, 4))
+                    request.app.state.guests.request(server["name"], g["vmid"], g["type"],
+                                                     host["name"], url, pin, rid, reinstall=True)
+                    return {"by": server["name"], "vmid": g["vmid"]}
+        raise HTTPException(409, f"{host['name']} is not a running guest of a Proxmox server"
+                                 " with Argus: run the command on it")
 
     @app.put("/api/companions/{cid}/ignored")
     async def ignore_container(cid: str, body: Ignore, request: Request, _: Admin) -> dict:

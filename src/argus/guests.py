@@ -25,10 +25,11 @@ class GuestInstalls:
         self.by_server: dict[str, dict[int, dict]] = {}
 
     def request(self, server: str, vmid: int, kind: str, name: str, url: str, pin: str | None,
-                code: str) -> None:
+                code: str, reinstall: bool = False) -> None:
         self.by_server.setdefault(server, {})[vmid] = {
             "vmid": vmid, "type": kind, "name": name, "url": url, "pin": pin or "",
-            "code": code, "state": "waiting", "output": "", "at": self.clock()}
+            "code": code, "reinstall": reinstall, "state": "waiting", "output": "",
+            "at": self.clock()}
 
     def _tidy(self, server: str) -> dict[int, dict]:
         now, reqs = self.clock(), self.by_server.get(server, {})
@@ -44,10 +45,10 @@ class GuestInstalls:
         out = []
         for r in self._tidy(server).values():
             if r["state"] == "waiting":
-                out.append({k: r[k] for k in ("vmid", "type", "url", "pin", "code")})
+                out.append({k: r[k] for k in ("vmid", "type", "url", "pin", "code", "reinstall")})
                 r["state"] = "running"
             elif r["state"] == "running":
-                out.append({k: r[k] for k in ("vmid", "type", "url", "pin", "code")})
+                out.append({k: r[k] for k in ("vmid", "type", "url", "pin", "code", "reinstall")})
         return out
 
     def results(self, server: str, items: list[dict]) -> None:
@@ -62,7 +63,7 @@ class GuestInstalls:
                 r.update(state="ok" if it["ok"] else "failed", output=out, at=self.clock())
 
     def view(self, server: str) -> dict[str, dict]:
-        return {str(v): {k: r[k] for k in ("state", "output", "at", "name")}
+        return {str(v): {k: r[k] for k in ("state", "output", "at", "name", "reinstall")}
                 for v, r in self._tidy(server).items()}
 
     def rename(self, old: str, new: str) -> None:
