@@ -32,7 +32,7 @@ def test_a_new_install_starts_with_nothing_done(client):
     c, _ = client
     s = c.get("/api/start").json()
     assert [x["key"] for x in s["steps"]] == [
-        "alerts", "host", "checks", "patching", "github", "deploys"]
+        "alerts", "host", "watcher", "checks", "patching", "github", "deploys"]
     assert s["done"] == 0 and not s["hidden"] and s["suggestions"] == []
 
 
@@ -44,7 +44,7 @@ def test_a_hosts_published_ports_become_ready_checks(client):
         {"name": "db", "state": "running", "ports": []},
     ], address_override="192.168.10.40")
     s = c.get("/api/start").json()
-    assert s["steps"][1]["done"] and s["steps"][2]["suggest"] == 1
+    assert s["steps"][1]["done"] and s["steps"][3]["suggest"] == 1
     (j,) = s["suggestions"]
     assert j["check"] == {"name": "jellyfin", "kind": "tcp", "target": "192.168.10.40:8096",
                           "group": "media"}
@@ -55,7 +55,7 @@ def test_a_hosts_published_ports_become_ready_checks(client):
     assert r.status_code == 200, r.text
     s = c.get("/api/start").json()
     assert s["suggestions"] == [] and s["coverage"]["watched"] == 1
-    assert s["steps"][2]["done"]
+    assert s["steps"][3]["done"]
 
 
 def test_a_host_argus_shares_gets_checks_run_inside_it(client):
@@ -93,3 +93,12 @@ def test_a_port_published_on_loopback_only_is_watched_from_the_host():
     by = {s["port"]: s["check"] for s in suggestions(hosts, [])}
     assert by[8080]["target"] == "192.168.10.47:8080" and "companion" not in by[8080]
     assert by[5984] == {**by[5984], "target": "127.0.0.1:5984", "companion": "lab"}
+
+
+def test_knowing_argus_stopped_is_a_setup_step(client):
+    c, csrf = client
+    steps = {x["key"]: x for x in c.get("/api/start").json()["steps"]}
+    assert not steps["watcher"]["done"] and steps["watcher"]["href"] == "#/alerts"
+    c.put("/api/alerts", headers=csrf, json={"watch_elsewhere": "Prometheus"})
+    steps = {x["key"]: x for x in c.get("/api/start").json()["steps"]}
+    assert steps["watcher"]["done"]

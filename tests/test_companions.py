@@ -446,3 +446,61 @@ def test_leave_argus_names_what_lives_outside_argus(rt, client, csrf):
     assert set(keys) == {"github_app", "deploy_repo", "write_token", "telegram"}
     assert keys["github_app"]["url"] == "https://github.com/settings/apps/argus-devin"
     assert "dependabot.yml" in keys["deploy_repo"]["how"]
+
+
+WATCH = {"bot": "argus_watchdog_bot", "bot_id": "777", "checked_at": 1.0}
+
+
+def test_a_host_that_watches_argus_is_listed_and_told_what_it_needs(client, csrf):
+    h = {"X-CSRF-Token": csrf}
+    me = enroll(client, new_code(client, csrf)["code"], "slayerz-lab").json()
+    other = enroll(client, new_code(client, csrf)["code"], "mars-b").json()
+    assert client.get("/api/info").json()["alerts"]["watched"] is None
+    r, _ = report(client, me["token"], watch=WATCH)
+    assert r.json()["watch"] == {"test": 0}
+    assert "watch" not in report(client, other["token"])[0].json()  # only to watchers
+    view = client.get("/api/alerts").json()
+    assert [(w["name"], w["bot"], w["same_bot"]) for w in view["watchers"]] == [
+        ("slayerz-lab", "argus_watchdog_bot", False)]
+    assert client.get("/api/info").json()["alerts"]["watched"] == "hosts"
+    # A test: every watcher sends one on its next report.
+    assert client.post("/api/alerts/watchers/test", headers=h).json()["watch_test"] == 1
+    assert report(client, me["token"], watch=WATCH)[0].json()["watch"]["test"] == 1
+    # The watchdog bot leaves with Argus: the Leave page names it.
+    keys = {o["key"]: o for o in client.get("/api/leave").json()["outside"]}
+    assert "slayerz-lab watch Argus" in keys["watchdog:argus_watchdog_bot"]["how"]
+
+
+def test_a_watcher_using_argus_own_bot_does_not_count(client, csrf):
+    client.app.state.settings.set_secret("alerts.telegram.token", "777:" + "a" * 30)
+    me = enroll(client, new_code(client, csrf)["code"], "slayerz-lab").json()
+    report(client, me["token"], watch=WATCH)
+    assert client.get("/api/alerts").json()["watchers"][0]["same_bot"] is True
+    assert client.get("/api/info").json()["alerts"]["watched"] is None
+
+
+def test_a_watcher_hears_when_argus_updates_or_cannot_alert(client, csrf):
+    s = client.app.state.settings
+    me = enroll(client, new_code(client, csrf)["code"], "argus").json()
+    here = [{"name": "argus-argus-1", "image": "ghcr.io/devinmb/argus:2", "state": "running",
+             "health": "healthy", "status": "", "project": "argus", "working_dir": "/opt/argus"}]
+    report(client, me["token"], containers=here, watch=WATCH)
+    client.post("/api/argus/update", headers={"X-CSRF-Token": csrf})
+    said = report(client, me["token"], containers=here, watch=WATCH)[0].json()["watch"]
+    at = client.get("/api/argus/version").json()["update"]["at"]
+    assert said["quiet_until"] == at + 15 * 60
+    s.set("alerts.delivery", {"ok_at": 1.0, "error": "could not reach Telegram (ConnectError)",
+                              "error_at": 2.0})
+    said = report(client, me["token"], watch=WATCH)[0].json()["watch"]
+    assert said["alerts_failing"] == "could not reach Telegram (ConnectError)"
+    s.set("alerts.delivery", {"ok_at": 3.0})
+    assert "alerts_failing" not in report(client, me["token"], watch=WATCH)[0].json()["watch"]
+
+
+def test_something_else_can_watch_argus(client, csrf):
+    h = {"X-CSRF-Token": csrf}
+    r = client.put("/api/alerts", headers=h, json={"watch_elsewhere": "Prometheus at site A"})
+    assert r.json()["watch_elsewhere"] == "Prometheus at site A"
+    assert client.get("/api/info").json()["alerts"]["watched"] == "elsewhere"
+    client.put("/api/alerts", headers=h, json={"watch_elsewhere": ""})
+    assert client.get("/api/info").json()["alerts"]["watched"] is None

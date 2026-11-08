@@ -188,6 +188,8 @@ type Reply struct {
 	ArgusUpdate *ArgusUpdate `json:"argus_update"`
 	// Uninstall from this host (Uninstall on its page, confirmed with the password).
 	Uninstall bool `json:"uninstall"`
+	// To a host that watches Argus (decision 19).
+	Watch *WatchSaid `json:"watch"`
 }
 
 // Build is the companion Argus serves for this host's CPU.

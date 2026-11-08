@@ -11,7 +11,7 @@ from argus.deploys import PULL_TOKEN, WRITE_TOKEN
 from argus.settings import Settings
 
 
-def outside(settings: Settings) -> list[dict]:
+def outside(settings: Settings, watchers: list[dict] | None = None) -> list[dict]:
     out = []
     app = settings.get(ghauth.APP)
     if app:
@@ -51,4 +51,11 @@ def outside(settings: Settings) -> list[dict]:
         out.append({"key": "watcher", "title": "The service that watches Argus",
                     "how": "Pause or delete the check there, or it alerts you that Argus stopped.",
                     "url": None})
+    for bot in sorted({w["bot"] for w in watchers or [] if w.get("bot")}):
+        hosts = ", ".join(w["name"] for w in watchers or [] if w.get("bot") == bot)
+        out.append({"key": f"watchdog:{bot}", "title": f"The watchdog bot @{bot}",
+                    "how": f"{hosts} watch Argus with it. Uninstalling a host stops it; on a host "
+                           "you keep, run sudo argus-companion watch --off first, or it tells you "
+                           "Argus stopped. Then send @BotFather /deletebot.",
+                    "url": "https://t.me/BotFather"})
     return out

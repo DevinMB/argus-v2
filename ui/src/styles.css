@@ -591,6 +591,16 @@ code { font: 12.5px var(--mono); background: var(--raise); border-radius: 4px; p
   font: 12px/1.5 var(--mono); color: var(--text); overflow-x: auto; white-space: pre;
 }
 .chat-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.watchers { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.watchers li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.watchers .dot { align-self: center; }
+.watcher-test { flex-basis: 100%; padding-left: 16px; }
+.watch-add { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.watch-add > summary { cursor: pointer; font-weight: 600; }
+.watch-add > summary:hover { color: var(--accent); }
+.watch-add .steps-list { margin: 10px 0 12px; }
+.watch-add .cmd { margin-top: 6px; align-items: center; }
+.watch-add .cmd code { flex: 1; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
 .firing { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .firing li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .firing .dot { align-self: center; }

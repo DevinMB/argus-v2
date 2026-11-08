@@ -384,13 +384,18 @@ export function pagingSentence(alerts, critical) {
 }
 
 export function watcherSentence(alerts) {
-  if (alerts?.watched) {
-    return "An outside service expects a ping from Argus every minute, and alerts you if the pings stop.";
+  switch (alerts?.watched) {
+    case "hosts":
+      return "Hosts watch Argus and message you through their own bot if it stops answering.";
+    case "url":
+      return "An outside service expects a ping from Argus every minute, and alerts you if the pings stop.";
+    case "elsewhere":
+      return "Something outside Argus watches it, by your word on the Alerts page.";
+    case "prometheus":
+      return "Prometheus alerts you if it cannot scrape Argus (the ArgusDown rule).";
+    default:
+      return "Nothing watches Argus itself yet. If it stopped, nobody would tell you: add a watcher on the Alerts page.";
   }
-  if (alerts?.sender === "prometheus") {
-    return "Prometheus alerts you if it cannot scrape Argus (the ArgusDown rule).";
-  }
-  return "Nothing watches Argus itself yet. If it stopped, nobody would tell you: add a watcher on the Alerts page.";
 }
 
 export const REPEATS = [[0, "Never"], [60, "Every hour"], [240, "Every 4 hours"],
