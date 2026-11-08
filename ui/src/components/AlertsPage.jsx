@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAlerts, send } from "../api.js";
 import SecretField from "./SecretField.jsx";
-import { REPEATS, agoText } from "../lib.js";
+import { Copy } from "./Hosts.jsx";
+import { REPEATS, agoText, machineOf } from "../lib.js";
 
 const SENDERS = {
   argus: ["Argus", "Sends to Telegram itself. Nothing else to run."],
@@ -9,7 +10,7 @@ const SENDERS = {
 };
 
 function since(view, t) {
-  return t ? `${agoText(view.now - t)} ago` : null;
+  return t ? agoText(view.now - t) : null;
 }
 
 // A small form row with its own Save, so each setting saves on its own.
@@ -235,37 +236,109 @@ function LinkField({ view, act }) {
   );
 }
 
-function Watcher({ view, act, busy, say }) {
+// Who watches Argus (decision 19): hosts with their own bot, or something else.
+function Watcher({ view, act, busy, say, hosts, argusHost }) {
   const w = view.watch;
+  const watchers = view.watchers;
+  const machine = machineOf(hosts);
+  const home = argusHost && machine[argusHost];
+  const counted = watchers.filter((x) => !x.same_bot);
+  const allHome = home && counted.length > 0 && counted.every((x) => machine[x.name] === home);
+  const [elsewhere, setElsewhere] = useState(view.watch_elsewhere);
   const save = (value) => act("watch", "PUT", "/api/alerts", { watch_url: value },
     value ? "Saved. Argus pings it every minute." : "Removed.").then((r) => !!r);
+  const other = w.url_set || !!view.watch_elsewhere;
   return (
-    <div className="panel">
-      <h2 className="eyebrow">Who watches Argus</h2>
+    <div className="panel" id="watch">
+      <h2 className="eyebrow">Who watches Argus {watchers.length > 0 && <span className="count">{watchers.length}</span>}</h2>
       <p className="muted">
-        A stopped Argus cannot tell you it stopped. Paste a ping URL from a dead-man&apos;s switch
-        service (healthchecks.io&apos;s free plan works): Argus pings it every minute while its checks
-        run, and the service alerts you when the pings stop.
+        A stopped Argus cannot tell you it stopped. Let a host or two watch it: each one messages you
+        through its own Telegram bot when Argus has not answered for 5 minutes, and again when it is back.
       </p>
-      {!w.url_set && view.sender === "argus" && (
-        <p className="banner banner-warn">Nothing watches Argus yet.</p>
+      {!view.watched_by && <p className="banner banner-warn">Nothing watches Argus yet.</p>}
+      {allHome && (
+        <p className="banner banner-warn">
+          Every watcher runs on {home}, the machine Argus runs on: if it stops, nobody tells you.
+          Add a watcher on another machine.
+        </p>
       )}
-      <SecretField label="Ping URL" saved={w.url_set} placeholder="https://hc-ping.com/..." busy={busy === "watch"}
-                   onSave={(v) => save(v)} onRemove={() => save("")} help="Kept encrypted: the URL is the key to your check." />
-      {w.error && (!w.ok_at || w.error_at > w.ok_at) ? (
-        <p className="form-error">Last ping failed {since(view, w.error_at)}: {w.error}</p>
-      ) : w.ok_at ? (
-        <p className="muted small">Last ping {since(view, w.ok_at)}.</p>
-      ) : null}
-      <p className="muted small">
-        Or run a second Argus somewhere else and give each one a check set to Alert on the other&apos;s <code>/healthz</code>.
-      </p>
-      {say("watch")}
+      {watchers.length > 0 && (
+        <ul className="watchers">
+          {watchers.map((x) => {
+            const tone = x.same_bot || x.error || x.status !== "ok" ? "down" : "up";
+            const line = x.same_bot ? "watches with Argus's own bot: make a second bot and run the command again"
+              : x.status !== "ok" ? "this host has gone quiet, so it is not watching"
+              : x.error ? `cannot reach Telegram: ${x.error}`
+              : x.checked_at ? `Telegram answered ${since(view, x.checked_at)}` : "checking Telegram";
+            return (
+              <li key={x.name}>
+                <span className={`dot dot-${tone}`} aria-hidden="true" />
+                <strong>{x.name}</strong>{x.bot && <span className="muted mono small"> @{x.bot}</span>}
+                <span className={`small ${tone === "down" ? "st-down" : "muted"}`}> {line}</span>
+                {view.watch_test > 0 && x.status === "ok" && !x.same_bot && (
+                  <span className="small muted watcher-test">
+                    {x.test >= view.watch_test ? (x.test_error ? `Test failed: ${x.test_error}` : "Test sent.")
+                      : "Test goes out on its next report, within a minute."}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {counted.length > 0 && (
+        <p>
+          <button className="btn" type="button" disabled={busy === "watch-test"}
+                  onClick={() => act("watch-test", "POST", "/api/alerts/watchers/test")}>
+            Send a test from {counted.length === 1 ? counted[0].name : "each watcher"}
+          </button>
+        </p>
+      )}
+      {say("watch-test")}
+      <details className="watch-add" open={watchers.length === 0}>
+        <summary>{watchers.length ? "Add another watcher" : "Add a watcher"}</summary>
+        <ol className="steps-list">
+          <li>In Telegram, ask <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a> for
+            a new bot (<code>/newbot</code>). Use a second bot, not the one Argus sends its alerts with.</li>
+          <li>On a host on another machine than Argus{home ? ` (not ${home})` : ""}, run:
+            <span className="field-row cmd"><code>sudo argus-companion watch</code><Copy text="sudo argus-companion watch" /></span>
+          </li>
+          <li>Paste the bot&apos;s token when it asks, then send the bot a message. The host shows up here within a minute.</li>
+        </ol>
+        <p className="muted small">
+          The token stays on that host: Argus never sees it. A monitoring-only host can watch too.
+          To stop: <code>sudo argus-companion watch --off</code>.
+        </p>
+      </details>
+      <details className="watch-add" open={other && watchers.length === 0}>
+        <summary>Or something else watches Argus</summary>
+        <label className="field">
+          <span>What watches it</span>
+          <span className="field-row">
+            <input value={elsewhere} maxLength={120} placeholder="Prometheus at site A" onChange={(e) => setElsewhere(e.target.value)} />
+            <button type="button" className="btn" disabled={elsewhere.trim() === view.watch_elsewhere}
+                    onClick={() => act("elsewhere", "PUT", "/api/alerts", { watch_elsewhere: elsewhere },
+                      elsewhere.trim() ? "Saved." : "Removed.")}>Save</button>
+          </span>
+          <small>If Prometheus, Uptime Kuma or another monitor already checks <code>/healthz</code>, name it here
+            so Argus stops asking.</small>
+        </label>
+        {say("elsewhere")}
+        <SecretField label="Or a ping URL" saved={w.url_set} placeholder="https://..." busy={busy === "watch"}
+                     onSave={(v) => save(v)} onRemove={() => save("")}
+                     help="For a dead-man's switch service: Argus pings it every minute, and it alerts you when the pings stop. Kept encrypted." />
+        {w.error && (!w.ok_at || w.error_at > w.ok_at) ? (
+          <p className="form-error">Last ping failed {since(view, w.error_at)}: {w.error}</p>
+        ) : w.ok_at ? (
+          <p className="muted small">Last ping {since(view, w.ok_at)}.</p>
+        ) : null}
+        {say("watch")}
+      </details>
     </div>
   );
 }
 
-export default function AlertsPage({ session }) {
+export default function AlertsPage({ session, hosts = [], argusHost = null }) {
   const [view, setView] = useState(null);
   const [error, setError] = useState(null);
   const [want, setWant] = useState(null); // the sender being switched to
@@ -331,7 +404,7 @@ export default function AlertsPage({ session }) {
       )}
 
       <WhatPages view={view} act={act} say={say} />
-      <Watcher view={view} act={act} busy={busy} say={say} />
+      <Watcher view={view} act={act} busy={busy} say={say} hosts={hosts} argusHost={argusHost} />
     </section>
   );
 }

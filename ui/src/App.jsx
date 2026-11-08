@@ -225,7 +225,8 @@ export default function App() {
           <a href="#/config" aria-current={view === "config" ? "page" : undefined}>Config</a>
         </nav>
       )}
-      {!locked && settingsView && session?.signed_in && view === "alerts" && <AlertsPage session={session} />}
+      {!locked && settingsView && session?.signed_in && view === "alerts" && (
+        <AlertsPage session={session} hosts={data?.companions?.companions ?? []} argusHost={data?.version?.host ?? null} />)}
       {!locked && settingsView && session?.signed_in && view === "github" && <GitHubPage session={session} />}
       {!locked && session?.signed_in && view === "leave" && <LeavePage session={session} />}
       {!locked && session?.signed_in && view === "deploy" && <DeploySetup session={session} data={data} reload={reload} />}

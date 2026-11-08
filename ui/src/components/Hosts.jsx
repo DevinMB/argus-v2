@@ -6,7 +6,7 @@ import { advisoryUrl, agoText, attention, backupLabel, bytes, containerTrouble, 
 const STATUS = { ok: ["up", "reporting"], quiet: ["down", "gone quiet"], waiting: ["unknown", "waiting"] };
 const FIRST_CONTAINERS = 8;
 
-function Copy({ text }) {
+export function Copy({ text }) {
   const [done, setDone] = useState(false);
   return (
     <button className="btn" type="button" onClick={() => navigator.clipboard?.writeText(text).then(

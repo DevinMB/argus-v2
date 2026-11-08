@@ -60,6 +60,8 @@ from argus.settings import Settings, load_key
 from argus.sniff import Sniffer
 from argus.uninstalls import Uninstalls
 
+# While Argus updates itself, watchers expect silence this long from the request.
+WATCH_QUIET = 15 * 60
 STALL = 30  # seconds without a scheduler tick before /healthz fails
 MAX_REPORT = 256 * 1024  # bytes in a job report
 LOG_TAIL = 64 * 1024  # characters of log kept per run
@@ -172,6 +174,8 @@ class AlertSettings(BaseModel):
     repeat_minutes: int | None = Field(None, ge=0, le=7 * 24 * 60)
     link: str | None = Field(None, max_length=300)
     watch_url: str | None = Field(None, max_length=500)
+    # What else watches Argus, in the owner's words ("Prometheus at site A"); "" clears it.
+    watch_elsewhere: str | None = Field(None, max_length=120)
 
     _urls = field_validator("link", "watch_url")(_http_url)
 
@@ -393,6 +397,17 @@ class ArgusUpdateResult(BaseModel):
     log: str = Field("", max_length=32000)
 
 
+class WatchState(BaseModel):
+    """A host that watches Argus with its own bot (decision 19). Never the token."""
+
+    bot: str = Field("", max_length=64)
+    bot_id: str = Field("", max_length=24)
+    checked_at: float | None = None
+    error: str = Field("", max_length=300)
+    test: int = Field(0, ge=0)
+    test_error: str = Field("", max_length=300)
+
+
 class Report(BaseModel):
     nonce: str = Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")
     version: str = Field("", max_length=100)
@@ -419,6 +434,7 @@ class Report(BaseModel):
     guest_installs: list[GuestResult] = Field([], max_length=50)
     argus_update: ArgusUpdateResult | None = None
     uninstall: UninstallResult | None = None
+    watch: WatchState | None = None
 
 
 class DeploySettings(BaseModel):
@@ -695,6 +711,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         if body.watch_url is not None:
             s.set_secret(WATCH_URL, body.watch_url)
             s.set("watch.state", None)
+        if body.watch_elsewhere is not None:
+            s.set("watch.elsewhere", body.watch_elsewhere.strip())
         if body.telegram_token is not None or body.chat_id is not None:
             s.set("alerts.test_ok_at", None)  # a new destination needs a new test
             s.set("alerts.delivery", None)
@@ -709,6 +727,13 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
     async def alert_test(request: Request, _: Admin) -> dict:
         error = await request.app.state.alerter.test()
         return {"ok": error is None, "error": error}
+
+    @app.post("/api/alerts/watchers/test")
+    async def watchers_test(request: Request, _: Admin) -> dict:
+        """Every watcher sends a test through its own bot on its next report."""
+        s = request.app.state.settings
+        s.set("watch.test", s.get("watch.test", 0) + 1)
+        return request.app.state.alerter.view()
 
     @app.post("/api/alerts/telegram-chats")
     async def telegram_chats(request: Request, _: Admin) -> dict:
@@ -1304,7 +1329,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
                            "uninstall": request.app.state.uninstalls.view(v["id"])}
                           for v in views],
                 "uninstalled": request.app.state.uninstalls.done(),
-                "outside": leave.outside(request.app.state.settings),
+                "outside": leave.outside(request.app.state.settings,
+                                         request.app.state.alerter.watchers()),
                 "argus_host": home[0]["name"] if home else None}
 
     @app.delete("/api/companions/{cid}/uninstall")
@@ -1489,6 +1515,12 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             body["argus_update"] = upd
         if not row["read_only"] and rep.proxmox and (todo := gi.to_send(row["name"])):
             body["guest_installs"] = todo
+        if rep.watch is not None:
+            # Even a monitoring-only host may watch: the bot is its owner's, not Argus's.
+            upd = su.state()
+            quiet = (upd["at"] + WATCH_QUIET
+                     if upd and upd["state"] in ("waiting", "running") else None)
+            body["watch"] = request.app.state.alerter.watch_reply(quiet)
         run = pt.grant(row["name"], bool(row["read_only"]), rep.model_dump())
         if run:
             body["patch"] = run

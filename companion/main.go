@@ -5,6 +5,7 @@
 //	argus-companion report [--config PATH]   print the report it would send
 //	argus-companion policy                   print the default policy file
 //	argus-companion policy-roots             print the policy's bind roots (for the unit)
+//	argus-companion watch [--off|--test]      watch Argus from this host (as root)
 //	argus-companion version
 //
 // It only ever calls Argus (HTTPS, pinned); nothing listens on the host. It
@@ -47,6 +48,8 @@ func main() {
 		fmt.Println("argus-companion", version)
 	case "uninstall":
 		os.Exit(uninstallHere())
+	case "watch":
+		os.Exit(watchHere(defaultConfig, watchFile, args))
 	case "enroll":
 		url := fs.String("url", "", "Argus's address, e.g. https://argus.lan:8443")
 		pin := fs.String("pin", "", "SHA-256 of Argus's TLS public key (from Add a host)")
@@ -122,6 +125,17 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 	guests := newGuestInstaller()
 	argusUpd := newArgusUpdater(stateDir)
 	uninstaller := newUninstaller()
+	watcher := newWatcher(c)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(30 * time.Second):
+				watcher.Tick()
+			}
+		}
+	}()
 	go patcher.AfterBoot() // a run that asked for a reboot finishes now
 	go checker.Loop(ctx)
 	every, failing := 60*time.Second, false
@@ -149,6 +163,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 		report.GuestInstalls = guests.Take()
 		report.ArgusUpdate = argusUpd.Take()
 		report.Uninstall = uninstaller.Take()
+		report.Watch = watcher.State()
 		reply, err := sendReport(client, c, report)
 		wait = every
 		if err != nil {
@@ -157,6 +172,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 				// Removed in Argus, or a restored database: only a new code helps.
 				log.Error("Argus no longer knows this host; enroll it again", "error", err)
 				wait = 5 * time.Minute
+				watcher.Heard(nil) // but it answered
 			} else if !failing {
 				log.Error("report failed; retrying", "error", err)
 			}
@@ -174,6 +190,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 			log.Info("uninstalled", "output", out, "error", err)
 			return
 		}
+		watcher.Heard(reply.Watch)
 		checker.Set(reply.Checks)
 		if reply.ReportEvery >= 10 {
 			every = time.Duration(reply.ReportEvery) * time.Second
@@ -253,7 +270,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: argus-companion enroll|run|report|policy|policy-roots|uninstall|version [--config PATH]")
+	fmt.Fprintln(os.Stderr, "usage: argus-companion enroll|run|report|policy|policy-roots|uninstall|watch|version [--config PATH]")
 	os.Exit(2)
 }
 

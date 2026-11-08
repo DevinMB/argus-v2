@@ -186,6 +186,10 @@ class Alerter:
             "prom_test_active": now < self.settings.get("alerts.prom_test_until", 0),
             "watch": {"url_set": self.settings.has_secret(WATCH_URL),
                       **self.settings.get("watch.state", {})},
+            "watchers": self.watchers(),
+            "watch_test": self.settings.get("watch.test", 0),
+            "watch_elsewhere": self.settings.get("watch.elsewhere", ""),
+            "watched_by": self.watched_by(),
             "firing": [dict(r) for r in self.db.execute(
                 "SELECT key, title, detail, since, notified, last_sent FROM alerts"
                 " ORDER BY since")],
@@ -197,7 +201,45 @@ class Alerter:
         return {"sender": self.sender(),
                 "ready": self.sender() == "prometheus" or self.channel() is not None,
                 "tested": self.settings.get("alerts.test_ok_at") is not None,
-                "watched": self.settings.has_secret(WATCH_URL)}
+                "watched": self.watched_by()}
+
+    # --- who watches Argus (decision 19) ---
+
+    def watchers(self) -> list[dict]:
+        """Hosts that watch Argus with their own bot (sudo argus-companion watch)."""
+        own = (self.settings.secret(TOKEN) or "").split(":")[0]
+        out = []
+        for v in self.rt.companions.views():
+            w = (v.get("report") or {}).get("watch")
+            if not w:
+                continue
+            out.append({"name": v["name"], "status": v["status"], "bot": w.get("bot", ""),
+                        "same_bot": bool(own) and w.get("bot_id") == own,
+                        **{k: w.get(k) for k in ("checked_at", "error", "test", "test_error")}})
+        return out
+
+    def watched_by(self) -> str | None:
+        """What watches Argus: hosts, a ping URL, something the owner named,
+        Prometheus (its ArgusDown rule), or nothing."""
+        if any(w["status"] == "ok" and not w["same_bot"] for w in self.watchers()):
+            return "hosts"
+        if self.settings.has_secret(WATCH_URL):
+            return "url"
+        if self.settings.get("watch.elsewhere"):
+            return "elsewhere"
+        if self.sender() == "prometheus":
+            return "prometheus"  # the rules Argus hands it include ArgusDown
+        return None
+
+    def watch_reply(self, quiet_until: float | None) -> dict:
+        """The watch part of a watcher's signed reply."""
+        out: dict = {"test": self.settings.get("watch.test", 0)}
+        if quiet_until:
+            out["quiet_until"] = quiet_until
+        d = self.settings.get("alerts.delivery") or {}
+        if self.sender() == "argus" and d.get("error") and d.get("error_at", 0) > d.get("ok_at", 0):
+            out["alerts_failing"] = d["error"]
+        return out
 
     # --- what is wrong right now ---
 

@@ -48,6 +48,7 @@ type Report struct {
 	GuestInstalls  []GuestResult      `json:"guest_installs,omitempty"`
 	ArgusUpdate    *ArgusUpdateResult `json:"argus_update,omitempty"`
 	Uninstall      *UninstallResult   `json:"uninstall,omitempty"`
+	Watch          *WatchState        `json:"watch,omitempty"` // this host watches Argus
 }
 
 type Container struct {

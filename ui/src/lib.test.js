@@ -250,9 +250,10 @@ describe("alerts text", () => {
     expect(pagingSentence({ sender: "prometheus", ready: true }, 2)).toMatch(/Prometheus and Alertmanager/);
   });
   it("says plainly when nothing watches Argus", () => {
-    expect(watcherSentence({ watched: false, sender: "argus" })).toMatch(/^Nothing watches Argus/);
-    expect(watcherSentence({ watched: true })).toMatch(/outside service/);
-    expect(watcherSentence({ watched: false, sender: "prometheus" })).toMatch(/ArgusDown/);
+    expect(watcherSentence({ watched: null, sender: "argus" })).toMatch(/^Nothing watches Argus/);
+    expect(watcherSentence({ watched: "hosts" })).toMatch(/^Hosts watch Argus/);
+    expect(watcherSentence({ watched: "url" })).toMatch(/outside service/);
+    expect(watcherSentence({ watched: "prometheus" })).toMatch(/ArgusDown/);
   });
 });
 
