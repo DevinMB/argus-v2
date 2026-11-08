@@ -125,11 +125,8 @@ func (d *Deployer) inPlace(dir string) error {
 	if !slices.Contains(d.Adopted(), dir) {
 		return fmt.Errorf("%s was never adopted on this host, so nothing is deployed there", dir)
 	}
-	for _, root := range d.Policy.BindRoots {
-		root = filepath.Clean(root)
-		if dir == root || strings.HasPrefix(dir, root+"/") {
-			return nil
-		}
+	if d.allowed(dir) {
+		return nil
 	}
 	return fmt.Errorf("%s is outside the folders this host's policy allows (%s); add it to bind_roots in /etc/argus-companion/policy.json on the host",
 		dir, strings.Join(d.Policy.BindRoots, ", "))
