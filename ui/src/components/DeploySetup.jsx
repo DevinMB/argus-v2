@@ -27,7 +27,8 @@ function RepoStep({ session, gh, d, onSaved, reloadGh }) {
   const [repo, setRepo] = useState(d.repo || "");
   const [error, setError] = useState(null);
   if (!gh || gh.source === "none") {
-    return <p>Argus reads your repos through GitHub. <a className="btn btn-small btn-primary" href="#/github">Connect GitHub</a></p>;
+    return <><p>Argus reads your repos through GitHub.</p>
+      <div className="actions"><a className="btn btn-primary" href="#/github">Connect GitHub</a></div></>;
   }
   const repos = (gh.repos ?? []).filter((r) => !r.archived).map((r) => r.full_name);
   const chosen = (gh.installations ?? []).filter((i) => i.selection !== "all");

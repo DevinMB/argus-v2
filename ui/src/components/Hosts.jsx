@@ -1118,7 +1118,12 @@ function HostDetail({ host, tab, session, reload, refs, backups, hostNames, sugg
         {host.read_only && <span className="chip">monitoring only</span>}
         <span className="muted small hd-seen">{host.last_seen ? `reported ${agoText(host.age)}` : "waiting for its first report"}</span>
       </header>
-      {host.report && <p className="muted small hd-sub">{[r.os, r.kernel, r.arch, r.version && `companion ${r.version}`, host.address].filter(Boolean).join(" · ")}</p>}
+      {host.report && <>
+        <p className="muted hd-sub">{[r.os, host.address].filter(Boolean).join(" · ")}</p>
+        {/* The details someone debugging wants, quieter than what the host is. */}
+        <p className="muted hd-build">{[r.kernel && `kernel ${r.kernel}`, r.arch,
+          r.version && `companion ${r.version.replace(/\+([0-9a-f]{7})[0-9a-f]*$/, "+$1")}`].filter(Boolean).join(" · ")}</p>
+      </>}
       <HostActions host={host} session={session} reload={reload} hosts={hosts} updateCommand={updateCommand} />
       <nav className="subtabs hd-tabs">
         {tabs.map(([k, label]) => (
