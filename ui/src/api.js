@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { errorText } from "./lib.js";
+import { errorText, httpText } from "./lib.js";
 
 const REFRESH_MS = 10_000;
 
 async function getJSON(path, signal) {
   const r = await fetch(path, { signal, headers: { Accept: "application/json" } });
-  if (!r.ok) throw Object.assign(new Error(`${path}: HTTP ${r.status}`), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(httpText(r.status)), { status: r.status });
   return r.json();
 }
 
@@ -18,7 +18,7 @@ export async function send(method, path, body, csrf) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(errorText(data.detail) || `HTTP ${r.status}`), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(errorText(data.detail) || httpText(r.status)), { status: r.status });
   return data;
 }
 

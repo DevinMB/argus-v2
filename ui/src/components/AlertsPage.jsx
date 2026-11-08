@@ -200,7 +200,7 @@ function WhatPages({ view, act, say }) {
   return (
     <div className="panel">
       <h2 className="eyebrow">What sends a message</h2>
-      <p className="muted">Only entries marked <span className="chip chip-critical">pages</span> (severity: critical) send one. The rest show on the dashboard. Problems that start together arrive as one message.</p>
+      <p className="muted">Only checks set to <strong>Alert</strong> send a message; the rest show on the dashboard. Problems that start together arrive as one message.</p>
       {items.map(([k, label]) => (
         <label key={k} className="toggle">
           <input type="checkbox" checked={rules[k]} onChange={() => toggle(k)} />
@@ -258,7 +258,7 @@ function Watcher({ view, act, busy, say }) {
         <p className="muted small">Last ping {since(view, w.ok_at)}.</p>
       ) : null}
       <p className="muted small">
-        Or run a second Argus somewhere else and give each a critical check on the other&apos;s <code>/healthz</code>.
+        Or run a second Argus somewhere else and give each one a check set to Alert on the other&apos;s <code>/healthz</code>.
       </p>
       {say("watch")}
     </div>

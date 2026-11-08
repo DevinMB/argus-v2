@@ -101,7 +101,7 @@ export default function CheckDrawer({ name, now, sites, csrf, onClose, onEdit, o
                     onChanged?.();
                   } catch (e) { setError(e.message); }
                 }}>Resume</button>
-                {check.probe_status === "down" && check.severity === "critical" && <span className="small">It is down now, so resuming pages you.</span>}
+                {check.probe_status === "down" && check.severity === "critical" && <span className="small">It is down now, so resuming sends you an alert.</span>}
               </div>
             )}
             {csrf && !check.paused && pausing && (
@@ -128,17 +128,16 @@ export default function CheckDrawer({ name, now, sites, csrf, onClose, onEdit, o
               <dt>Checked from</dt><dd>{check.companion ? <a href="#/hosts">{check.companion}</a> : "Argus"}</dd>
               <dt>Site</dt><dd>{siteName(sites, check.site)}</dd>
               <dt>Group</dt><dd>{check.group}</dd>
-              <dt>Severity</dt><dd>{check.severity === "critical" ? "critical (pages)" : "warning (boards only)"}</dd>
+              <dt>When down</dt><dd>{check.severity === "critical" ? "alerts you" : "dashboard only"}</dd>
               <dt>Every</dt><dd>{check.interval} s, timeout {check.timeout} s</dd>
               <dt>Last run</dt><dd>{agoText(now - check.last_run)} · {ms(check.last_duration)}</dd>
               <dt>Last success</dt><dd>{check.last_ok ? agoText(now - check.last_ok) : "never"}</dd>
             </dl>
-            <h3 className="eyebrow">Track{check.repo && <span className="count">{check.repo}</span>}</h3>
-            {check.track ? (
+            {/* Only a check an app's pipeline feeds has a track; the rest would say so in jargon. */}
+            {check.track && <>
+              <h3 className="eyebrow">Track{check.repo && <span className="count">{check.repo}</span>}</h3>
               <Track steps={check.track} now={now} />
-            ) : (
-              <p className="muted">No pipeline feeds this check yet; it is watched, not patched.</p>
-            )}
+            </>}
             <h3 className="eyebrow">History</h3>
             {check.transitions.length === 0 ? (
               <p className="muted">No changes recorded.</p>

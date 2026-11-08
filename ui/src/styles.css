@@ -927,3 +927,7 @@ button.ctable-row:hover { background: var(--raise); }
 .pf-sub.pf-row { display: flex; }
 .pf-text { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; padding: 7px 10px;
   color: var(--text); font: 13px var(--sans); width: min(100%, 460px); }
+
+/* A destructive action sits last and looks it, without shouting. */
+.btn-quiet-danger { color: var(--muted); border-color: transparent; background: none; }
+.btn-quiet-danger:hover { color: var(--down); border-color: rgb(255 107 94 / 0.4); }
