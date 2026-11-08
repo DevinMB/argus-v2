@@ -76,9 +76,9 @@ type Updates struct {
 	Pending   *int      `json:"pending"`
 	Security  *int      `json:"security"`
 	Packages  []Package `json:"packages,omitempty"`
-	Manager   string  `json:"manager"`
-	CheckedAt float64 `json:"checked_at"`
-	Error     string  `json:"error,omitempty"`
+	Manager   string    `json:"manager"`
+	CheckedAt float64   `json:"checked_at"`
+	Error     string    `json:"error,omitempty"`
 }
 
 // Collector gathers a report. Paths are fields so tests can point them at fixtures.
