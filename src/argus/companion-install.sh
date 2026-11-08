@@ -93,6 +93,7 @@ UNIT
   systemctl enable argus-companion >/dev/null 2>&1
   systemctl restart argus-companion
   echo "argus-companion is running; this host appears in Argus within a minute."
+  echo "To remove it later: Uninstall on its page in Argus, or sudo argus-companion uninstall"
 elif command -v openrc-run >/dev/null 2>&1 && [ -d /etc/init.d ]; then
   # Alpine and others on OpenRC: supervise-daemon restarts it like systemd would.
   mkdir -p /var/lib/argus-companion && chmod 0700 /var/lib/argus-companion

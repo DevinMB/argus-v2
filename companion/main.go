@@ -45,6 +45,8 @@ func main() {
 	switch cmd {
 	case "version":
 		fmt.Println("argus-companion", version)
+	case "uninstall":
+		os.Exit(uninstallHere())
 	case "enroll":
 		url := fs.String("url", "", "Argus's address, e.g. https://argus.lan:8443")
 		pin := fs.String("pin", "", "SHA-256 of Argus's TLS public key (from Add a host)")
@@ -119,6 +121,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 	updater := newUpdater(client, c.URL, stateDir)
 	guests := newGuestInstaller()
 	argusUpd := newArgusUpdater(stateDir)
+	uninstaller := newUninstaller()
 	go patcher.AfterBoot() // a run that asked for a reboot finishes now
 	go checker.Loop(ctx)
 	every, failing := 60*time.Second, false
@@ -145,6 +148,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 		collected = nil
 		report.GuestInstalls = guests.Take()
 		report.ArgusUpdate = argusUpd.Take()
+		report.Uninstall = uninstaller.Take()
 		reply, err := sendReport(client, c, report)
 		wait = every
 		if err != nil {
@@ -162,6 +166,13 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 		if failing {
 			log.Info("reporting again")
 			failing = false
+		}
+		// Argus has the handback's result: now the program itself goes.
+		if uninstaller.Sent() {
+			log.Info("uninstalling: stacks handed back, removing the companion")
+			out, err := uninstaller.Remove()
+			log.Info("uninstalled", "output", out, "error", err)
+			return
 		}
 		checker.Set(reply.Checks)
 		if reply.ReportEvery >= 10 {
@@ -207,6 +218,13 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 				guests.Start(reply.GuestInstalls)
 			}
 		}
+		// Uninstall: hand the stacks back, report it, then remove (decision 18).
+		// Monitoring-only hosts are not Argus's to change; their owner runs the command.
+		if reply.Uninstall && !c.ReadOnly {
+			log.Info("uninstall asked: handing stacks back")
+			uninstaller.HandBack()
+			wait = time.Second
+		}
 		// Update Argus, when this is its machine and the policy allows.
 		if u := reply.ArgusUpdate; u != nil && !c.ReadOnly && report.Containers != nil {
 			if p, err := loadPolicy(deployer.PolicyPath); err == nil && !p.NoArgusUpdates {
@@ -235,7 +253,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: argus-companion enroll|run|report|policy|policy-roots|version [--config PATH]")
+	fmt.Fprintln(os.Stderr, "usage: argus-companion enroll|run|report|policy|policy-roots|uninstall|version [--config PATH]")
 	os.Exit(2)
 }
 

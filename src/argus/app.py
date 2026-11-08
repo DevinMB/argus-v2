@@ -19,6 +19,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -57,6 +58,7 @@ from argus.runtime import Runtime
 from argus.selfupdate import SelfUpdate
 from argus.settings import Settings, load_key
 from argus.sniff import Sniffer
+from argus.uninstalls import Uninstalls
 
 STALL = 30  # seconds without a scheduler tick before /healthz fails
 MAX_REPORT = 256 * 1024  # bytes in a job report
@@ -357,6 +359,18 @@ class GuestResult(BaseModel):
     output: str = Field("", max_length=8000)
 
 
+class UninstallResult(BaseModel):
+    """How a companion handed its stacks back, sent before it removes itself."""
+    state: Literal["ok", "failed"]
+    log: str = Field("", max_length=8000)
+
+
+class Confirm(BaseModel):
+    """The admin password twice, for uninstalling a companion (decision 18)."""
+    password: str = Field(max_length=1024)
+    again: str = Field(max_length=1024)
+
+
 class ArgusUpdateResult(BaseModel):
     id: str = Field(max_length=40)
     state: Literal["running", "ok", "failed", "rolled_back"]
@@ -389,6 +403,7 @@ class Report(BaseModel):
     proxmox: Proxmox | None = None
     guest_installs: list[GuestResult] = Field([], max_length=50)
     argus_update: ArgusUpdateResult | None = None
+    uninstall: UninstallResult | None = None
 
 
 class DeploySettings(BaseModel):
@@ -533,6 +548,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         app.state.patching = alerter.patching = Patching(rt.store.db, settings, rt, rt.clock)
         app.state.adoption = Adoption(settings, deploys, rt.clock)
         app.state.guests = GuestInstalls(rt.clock)
+        app.state.uninstalls = Uninstalls(settings, rt.clock)
         app.state.sniffer = Sniffer(rt.clock)
         app.state.behind = {}  # host -> when its companion first lagged this build
         app.state.selfupdate = SelfUpdate(settings, client, rt.clock)
@@ -1202,8 +1218,10 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             v["adoptable"] = [] if v["read_only"] else request.app.state.adoption.projects(v)
             v["guest_installs"] = request.app.state.guests.view(v["name"])
             v["companion_stale"] = companion_stale(request, v)
+            v["uninstall"] = request.app.state.uninstalls.view(v["id"])
         named = {c.companion for c in r.config.checks if c.companion}
         return {"companions": views, "backups": backups,
+                "uninstalled": request.app.state.uninstalls.done(),
                 "report_every": REPORT_EVERY, "now": r.clock(),
                 "tls_pin": request.app.state.tls_pin is not None,
                 "update_command": install_command(request, str(request.base_url)),
@@ -1218,15 +1236,40 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         return {"code": code, "expires": expires,
                 "command": install_command(request, body.url, code, body.read_only)}
 
-    @app.delete("/api/companions/{cid}")
-    async def remove_host(cid: str, request: Request, _: Admin) -> dict:
+    def forget_host(request: Request, cid: str) -> str | None:
         name = rt(request).companions.remove(cid)
         if name is None:
-            raise HTTPException(404, "no such host")
+            return None
         # Nothing of it stays to be inherited by a later host with the same name.
         request.app.state.patching.forget(name)
         request.app.state.adoption.forget(name)
         request.app.state.guests.forget(name)
+        request.app.state.uninstalls.cancel(cid)
+        return name
+
+    @app.delete("/api/companions/{cid}")
+    async def remove_host(cid: str, request: Request, _: Admin) -> dict:
+        if forget_host(request, cid) is None:
+            raise HTTPException(404, "no such host")
+        return {"ok": True}
+
+    @app.post("/api/companions/{cid}/uninstall")
+    async def uninstall_host(cid: str, body: Confirm, request: Request, _: Admin) -> dict:
+        """Uninstall the companion from the host, stacks handed back first."""
+        if body.password != body.again:
+            raise HTTPException(422, "the two passwords are not the same")
+        auth_call(request.app.state.auth.confirm, body.password, address(request))
+        row = next((v for v in rt(request).companions.views() if v["id"] == cid), None)
+        if row is None:
+            raise HTTPException(404, "no such host")
+        if row["read_only"]:
+            raise HTTPException(409, "a monitoring-only host is not Argus's to change: "
+                                     "run sudo argus-companion uninstall on it, then Remove")
+        return request.app.state.uninstalls.request(cid, row["name"])
+
+    @app.delete("/api/companions/{cid}/uninstall")
+    async def cancel_uninstall(cid: str, request: Request, _: Admin) -> dict:
+        request.app.state.uninstalls.cancel(cid)
         return {"ok": True}
 
     @app.put("/api/companions/{cid}/name")
@@ -1354,7 +1397,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         # Collected files (with a .env) stay in memory for the preview, never stored.
         r.companions.save_report(row["id"],
                                  rep.model_dump(exclude={"nonce", "checks", "collected",
-                                                         "guest_installs", "argus_update"}),
+                                                         "guest_installs", "argus_update",
+                                                         "uninstall"}),
                                  address(request))
         if not row["read_only"]:
             request.app.state.adoption.received(row["name"],
@@ -1365,6 +1409,16 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         gi.results(row["name"], [x.model_dump() for x in rep.guest_installs])
         su = request.app.state.selfupdate
         su.result(row["name"], rep.argus_update and rep.argus_update.model_dump())
+        un = request.app.state.uninstalls
+        if un.result(row["id"], rep.uninstall and rep.uninstall.model_dump()) == "ok":
+            # Its stacks are handed back and it is removing itself: forget it now.
+            name = forget_host(request, row["id"])
+            logging.getLogger("argus").info("companion on %s uninstalled", name)
+            reply = json.dumps({"name": row["name"], "report_every": REPORT_EVERY,
+                                "read_only": bool(row["read_only"]), "checks": []},
+                               separators=(",", ":")).encode()
+            return Response(reply, media_type="application/json", headers={
+                "X-Argus-Signature": request.app.state.signer.sign(row["id"], rep.nonce, reply)})
         body = {
             "name": row["name"],
             "report_every": REPORT_EVERY,
@@ -1389,6 +1443,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         # A monitoring-only host keeps the program it has: it is not Argus's to change.
         if not row["read_only"] and (sha := companion_sha256(rep.arch)):
             body["companion"] = {"sha256": sha}
+        if not row["read_only"] and un.to_send(row["id"]):
+            body["uninstall"] = True
         if not row["read_only"] and (upd := su.to_send(row["name"])):
             body["argus_update"] = upd
         if not row["read_only"] and rep.proxmox and (todo := gi.to_send(row["name"])):

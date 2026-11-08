@@ -365,3 +365,44 @@ def test_reinstall_companion_goes_through_the_guests_proxmox_server(client, csrf
     assert ask["reinstall"] is True and ask["vmid"] == 105
     r = client.post(f"/api/companions/{lone['id']}/reinstall", headers=h, json=url)
     assert r.status_code == 409 and "run the command" in r.json()["detail"]
+
+
+def test_uninstall_asks_for_the_password_twice_then_the_companion_then_forgets(client, csrf):
+    """Decision 18: the password twice; the next reply asks the companion; its
+    handback report makes Argus forget the host, and not before."""
+    from test_auth import PASSWORD
+    me = enroll(client, new_code(client, csrf)["code"]).json()
+    url, h = f"/api/companions/{me['id']}/uninstall", {"X-CSRF-Token": csrf}
+    def ask(password, again):
+        return client.post(url, headers=h, json={"password": password, "again": again})
+    assert ask(PASSWORD, "other").status_code == 422
+    assert ask("wrong", "wrong").status_code == 403
+    assert "uninstall" not in report(client, me["token"])[0].json()
+
+    r = client.post(url, headers=h, json={"password": PASSWORD, "again": PASSWORD})
+    assert r.status_code == 200 and r.json()["state"] == "waiting"
+    assert report(client, me["token"])[0].json()["uninstall"] is True
+    host = client.get("/api/companions").json()["companions"][0]
+    assert host["uninstall"]["state"] == "waiting" and not host["uninstall"]["stale"]
+
+    # A failed handback keeps the host, with what went wrong.
+    report(client, me["token"], uninstall={"state": "failed", "log": "could not move web"})
+    host = client.get("/api/companions").json()["companions"][0]
+    assert host["uninstall"]["state"] == "failed" and "web" in host["uninstall"]["log"]
+
+    client.post(url, headers=h, json={"password": PASSWORD, "again": PASSWORD})
+    back = "handed back web: /opt/stacks/web"
+    r, _ = report(client, me["token"], uninstall={"state": "ok", "log": back})
+    assert r.status_code == 200 and "uninstall" not in r.json()
+    view = client.get("/api/companions").json()
+    assert view["companions"] == []
+    assert view["uninstalled"][0]["log"] == back
+    assert report(client, me["token"])[0].status_code == 401
+
+
+def test_a_monitoring_only_host_is_uninstalled_by_its_owner_not_argus(client, csrf):
+    from test_auth import PASSWORD
+    me = enroll(client, new_code(client, csrf, read_only=True)["code"]).json()
+    r = client.post(f"/api/companions/{me['id']}/uninstall", headers={"X-CSRF-Token": csrf},
+                    json={"password": PASSWORD, "again": PASSWORD})
+    assert r.status_code == 409 and "argus-companion uninstall" in r.json()["detail"]

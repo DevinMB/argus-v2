@@ -47,6 +47,7 @@ type Report struct {
 	Proxmox        *Proxmox           `json:"proxmox,omitempty"` // on a Proxmox server
 	GuestInstalls  []GuestResult      `json:"guest_installs,omitempty"`
 	ArgusUpdate    *ArgusUpdateResult `json:"argus_update,omitempty"`
+	Uninstall      *UninstallResult   `json:"uninstall,omitempty"`
 }
 
 type Container struct {

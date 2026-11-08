@@ -957,3 +957,12 @@ button.ctable-row:hover { background: var(--raise); }
 
 /* Scrolled to from Add a check: clear of the sticky header. */
 #watch-more, .check-form { scroll-margin-top: 88px; }
+
+/* Uninstall: the strongest action, so the one red button in Argus. */
+.btn-danger { background: var(--down); border-color: var(--down); color: #1a1a1a; font-weight: 600; }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+.uninstall { border-color: rgb(255 107 94 / 0.45); margin-top: 8px; }
+.uninstall ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.uninstall-state { border-color: var(--line-strong); width: 100%; }
+.uninstall-state p { margin: 0 0 8px; }

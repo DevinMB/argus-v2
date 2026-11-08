@@ -929,6 +929,82 @@ function Reinstall({ host, hosts, session, updateCommand, onClose }) {
   );
 }
 
+// Uninstall (design decision 18): what happens, then the admin password twice.
+function Uninstall({ host, session, reload, onClose }) {
+  const [password, setPassword] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const go = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await send("POST", `/api/companions/${host.id}/uninstall`, { password, again }, session.csrf);
+      onClose();
+      reload();
+    } catch (err) {
+      setError(err.message);
+    }
+    setBusy(false);
+  };
+  const stacks = host.stacks ?? [];
+  return (
+    <form className="panel uninstall" onSubmit={go}>
+      <h3 className="eyebrow">Uninstall from {host.name}</h3>
+      <ol className="small">
+        <li>Its companion moves the stacks Argus deployed here to <code>/opt/stacks/&lt;name&gt;</code>, compose
+          file and <code>.env</code> together, so you can run them yourself. Running containers keep running.
+          {stacks.length > 0 && <> Stacks here: {stacks.map((s) => s.name).join(", ")}.</>}</li>
+        <li>It removes itself: the service, the program and its settings.</li>
+        <li>Argus forgets {host.name}: its checks run from it, its patch plan and its deploys stop.</li>
+      </ol>
+      <p className="small muted">Uninstalling software on another machine is the strongest thing Argus does, so it asks for your password twice.</p>
+      <div className="form-grid">
+        <label className="field"><span>Admin password</span>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required autoFocus /></label>
+        <label className="field"><span>The password again</span>
+          <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="current-password" required /></label>
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="actions">
+        <button className="btn btn-danger" disabled={busy || !password || password !== again}>
+          {busy ? "Asking…" : `Uninstall from ${host.name}`}</button>
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+        {password && again && password !== again && <span className="small st-failing">The two passwords are not the same.</span>}
+      </div>
+    </form>
+  );
+}
+
+// An uninstall on its way: waiting for the host, no answer, or a failed handback.
+function UninstallState({ host, session, reload, onRetry }) {
+  const u = host.uninstall;
+  const [error, setError] = useState(null);
+  if (!u) return null;
+  const cancel = async () => {
+    try { await send("DELETE", `/api/companions/${host.id}/uninstall`, undefined, session.csrf); reload(); }
+    catch (e) { setError(e.message); }
+  };
+  return (
+    <div className={`banner ${u.state === "failed" ? "banner-warn" : ""} uninstall-state`} role="status">
+      {u.state === "failed" ? (
+        <p><strong>The handback failed, so the companion stays.</strong> {withCode(u.log || "No details.")}</p>
+      ) : u.stale ? (
+        <p><strong>No answer from {host.name} for 15 minutes.</strong> If it is offline, run <code>{u.command}</code> on
+          it, then press Remove.</p>
+      ) : (
+        <p><strong>Uninstalling {host.name}.</strong> Waiting for its next report: it hands its stacks back, then removes itself.</p>
+      )}
+      <div className="actions">
+        {u.state === "failed" && <button className="btn btn-small" onClick={onRetry}>Try again</button>}
+        <button className="btn btn-small" onClick={cancel}>{u.state === "failed" ? "Keep it" : "Cancel"}</button>
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function HostActions({ host, session, reload, hosts, updateCommand }) {
   const [mode, setMode] = useState(null);
   const [name, setName] = useState(host.name);
@@ -956,11 +1032,14 @@ function HostActions({ host, session, reload, hosts, updateCommand }) {
   };
   return (
     <div className="host-actions">
-      {!mode && <>
+      <UninstallState host={host} session={session} reload={reload} onRetry={() => setMode("uninstall")} />
+      {!mode && !host.uninstall && <>
         <button className="btn btn-small" onClick={() => { setName(host.name); setMode("rename"); }}>Rename</button>
         {!host.read_only && <button className="btn btn-small" onClick={() => setMode("reinstall")}>Reinstall companion</button>}
+        {!host.read_only && <button className="btn btn-small btn-quiet-danger" onClick={() => setMode("uninstall")}>Uninstall</button>}
         <button className="btn btn-small btn-quiet-danger" onClick={() => setMode("remove")}>Remove</button>
       </>}
+      {mode === "uninstall" && <Uninstall host={host} session={session} reload={reload} onClose={() => setMode(null)} />}
       {mode === "reinstall" && <Reinstall host={host} hosts={hosts} session={session} updateCommand={updateCommand} onClose={() => setMode(null)} />}
       {mode === "rename" && (
         <form className="inline-form" onSubmit={rename}>
@@ -973,7 +1052,8 @@ function HostActions({ host, session, reload, hosts, updateCommand }) {
       )}
       {mode === "remove" && (
         <span className="inline-form small">
-          Remove {host.name}? Its token stops working at once; the program stays on the host until you uninstall it.
+          Forget {host.name} without uninstalling, for a host that is gone? Its token stops working at once. If the
+          program is still on it, run <code>sudo argus-companion uninstall</code> there{host.read_only ? "" : ", or use Uninstall instead"}.
           <button className="btn btn-small" onClick={remove}>Remove</button>
           <button className="btn btn-small" onClick={() => setMode(null)}>Keep</button>
         </span>
@@ -1393,13 +1473,17 @@ export default function Hosts({ data, session, reload, start, refs = [] }) {
           <h1>Hosts</h1>
           <p className="lede muted">
             {hosts.length === 0 ? "No hosts yet. Add one to see its containers, disks and updates here."
-              : `${hosts.length} host${hosts.length === 1 ? "" : "s"}${quiet ? `, ${quiet} gone quiet` : ""}. A host that misses three reports, or a disk past 95%, pages you.`}
+              : `${hosts.length} host${hosts.length === 1 ? "" : "s"}${quiet ? `, ${quiet} gone quiet` : ""}. A host that misses three reports, or a disk past 95%, alerts you.`}
           </p>
         </div>
         {!adding && (session?.signed_in
           ? <button className="btn btn-primary" onClick={() => setAdding(true)}>Add a host</button>
           : <a className="btn" href="#/account">Sign in to add a host</a>)}
       </div>
+      {(data?.uninstalled ?? []).map((u) => (
+        <p key={`${u.name}-${u.at}`} className="form-ok small" role="status">
+          <strong>{u.name} is uninstalled</strong> ({agoText(Date.now() / 1000 - u.at)}). {u.log}</p>
+      ))}
       {route.name && <p className="banner banner-warn">There is no host called {route.name} any more. <a href="#/hosts">All hosts</a></p>}
       {adding && session?.signed_in && (
         <AddHost key={route.add || ""} session={session} hosts={hosts} tlsPin={data?.tls_pin} initialName={route.add || ""}
