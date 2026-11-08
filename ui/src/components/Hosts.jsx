@@ -965,11 +965,22 @@ function FailedUnits({ host, session, reload }) {
   );
 }
 
-function Overview({ host, suggestions, session, reload }) {
+function Overview({ host, suggestions, session, reload, updateCommand }) {
   const r = host.report ?? {};
   const look = attention(host);
   return (
     <>
+      {host.companion_stale && (
+        <Section title="its companion is out of date">
+          <p className="small">
+            This host's companion has not updated itself to Argus's build for hours, so its fixes are not reaching this host.
+            Run this on the host once (root, or with sudo); it keeps the host as it is in Argus and only replaces the companion.
+            From then on it updates itself.
+          </p>
+          <pre className="snippet command">{updateCommand}</pre>
+          <div className="actions"><Copy text={updateCommand} /></div>
+        </Section>
+      )}
       <Section title="needs a look">
         {look.length ? <Tags items={look} /> : <p className="muted small">Nothing. {hostSentence(host)}</p>}
         {r.docker_error && <p className="st-failing small">Docker: {r.docker_error}</p>}
@@ -1004,7 +1015,7 @@ function Overview({ host, suggestions, session, reload }) {
   );
 }
 
-function HostDetail({ host, tab, session, reload, refs, backups, hostNames, suggestions }) {
+function HostDetail({ host, tab, session, reload, refs, backups, hostNames, suggestions, updateCommand }) {
   const r = host.report ?? {};
   const [tone, word] = STATUS[host.status];
   const tabs = [["overview", "Overview"]];
@@ -1031,7 +1042,7 @@ function HostDetail({ host, tab, session, reload, refs, backups, hostNames, sugg
         ))}
       </nav>
       <div className="hd-body">
-        {current === "overview" && <Overview host={host} suggestions={suggestions} session={session} reload={reload} />}
+        {current === "overview" && <Overview host={host} suggestions={suggestions} session={session} reload={reload} updateCommand={updateCommand} />}
         {current === "containers" && (
           <Section title="containers" about="Ignore sets aside one you do not care about (a one-off that exited): it moves to the bottom and no longer counts as trouble. Stopped containers never page.">
             {r.containers.length ? <Containers list={r.containers} host={host} session={session} reload={reload} />
@@ -1245,7 +1256,8 @@ export default function Hosts({ data, session, reload, start, refs = [] }) {
       <section className="hosts-page">
         <HostDetail host={selected} tab={route.tab} session={session} reload={reload} refs={refs}
                     backups={backups.filter((b) => b.server !== selected.name)} hostNames={hostNames}
-                    suggestions={(start?.suggestions ?? []).filter((g) => g.host === selected.name)} />
+                    suggestions={(start?.suggestions ?? []).filter((g) => g.host === selected.name)}
+                    updateCommand={data?.update_command ?? ""} />
       </section>
     );
   }

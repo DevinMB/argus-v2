@@ -67,6 +67,9 @@ COMPANION_DIR = Path(os.environ.get("ARGUS_COMPANION_DIR", "/app/companion"))
 _BUILDS: dict[str, tuple[float, str]] = {}
 
 
+STALE_COMPANION = 3 * 3600  # self-update tries hourly: three hours behind is stuck
+
+
 def companion_sha256(arch: str) -> str:
     """The sha256 of the companion build served for a CPU, "" when there is none.
     Companions compare it with their own and update themselves when it differs."""
@@ -528,6 +531,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         app.state.adoption = Adoption(settings, deploys, rt.clock)
         app.state.guests = GuestInstalls(rt.clock)
         app.state.sniffer = Sniffer(rt.clock)
+        app.state.behind = {}  # host -> when its companion first lagged this build
         app.state.selfupdate = SelfUpdate(settings, client, rt.clock)
         app.state.registry = registry(rt, gh, alerter.prometheus_test_active)
         tasks = []
@@ -1153,6 +1157,34 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
 
     # --- companions: the UI's side ---
 
+    def install_command(request: Request, url: str, code: str | None = None,
+                        read_only: bool = False) -> str:
+        """Add a host's command; without a code it only replaces the companion and
+        keeps the host's enrollment."""
+        url = url.rstrip("/")
+        pin = request.app.state.tls_pin if url.startswith("https://") else None
+        q = shlex.quote
+        fetch = f"curl -fsS -k --pinnedpubkey {q('sha256//' + pin)}" if pin else "curl -fsS"
+        args = f"--url {q(url)}" + (f" --pin {q(pin)}" if pin else "")
+        if code:
+            args += f" --code {code}"
+        if read_only:
+            args += " --read-only"
+        return f"{fetch} {q(url + '/companion/install.sh')} | sudo sh -s -- {args}"
+
+    def companion_stale(request: Request, v: dict) -> bool:
+        """A companion that has not caught up with this Argus's build for hours: its
+        self-update is failing (or it is one from before self-update), and only the
+        install command run on the host helps. Argus says so on the host's page."""
+        mine = os.environ.get("ARGUS_COMMIT", "")[:12]
+        version = ((v["report"] or {}).get("version") or "")
+        behind = request.app.state.behind
+        if not mine or mine == "unknown" or v["status"] != "ok" or version.endswith("+" + mine):
+            behind.pop(v["name"], None)
+            return False
+        since = behind.setdefault(v["name"], rt(request).clock())
+        return rt(request).clock() - since > STALE_COMPANION
+
     @app.get("/api/companions")
     async def companions(request: Request) -> dict:
         r = rt(request)
@@ -1166,10 +1198,12 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             v["patching"] = request.app.state.patching.view(v["name"], v["report"], backups)
             v["adoptable"] = [] if v["read_only"] else request.app.state.adoption.projects(v)
             v["guest_installs"] = request.app.state.guests.view(v["name"])
+            v["companion_stale"] = companion_stale(request, v)
         named = {c.companion for c in r.config.checks if c.companion}
         return {"companions": views, "backups": backups,
                 "report_every": REPORT_EVERY, "now": r.clock(),
                 "tls_pin": request.app.state.tls_pin is not None,
+                "update_command": install_command(request, str(request.base_url)),
                 "unknown": sorted(named - r.companions.names())}
 
     @app.post("/api/companions/codes")
@@ -1178,15 +1212,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             raise HTTPException(422, "a command for several hosts names each after itself; "
                                      "leave the name empty")
         code, expires = rt(request).companions.new_code(body.name, body.read_only, body.hosts)
-        url = body.url.rstrip("/")
-        pin = request.app.state.tls_pin if url.startswith("https://") else None
-        q = shlex.quote
-        fetch = f"curl -fsS -k --pinnedpubkey {q('sha256//' + pin)}" if pin else "curl -fsS"
-        args = f"--url {q(url)}" + (f" --pin {q(pin)}" if pin else "") + f" --code {code}"
-        if body.read_only:
-            args += " --read-only"
         return {"code": code, "expires": expires,
-                "command": f"{fetch} {q(url + '/companion/install.sh')} | sudo sh -s -- {args}"}
+                "command": install_command(request, body.url, code, body.read_only)}
 
     @app.delete("/api/companions/{cid}")
     async def remove_host(cid: str, request: Request, _: Admin) -> dict:

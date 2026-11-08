@@ -444,6 +444,7 @@ export function attention(host) {
   const r = host.report ?? {};
   const out = [];
   if (host.status === "quiet") out.push(["down", `quiet ${agoText(host.age)}`]);
+  if (host.companion_stale) out.push(["failing", "companion out of date"]);
   const ignored = host.ignored ?? [];
   const bad = (r.containers ?? []).filter((c) => !ignored.includes(c.name) && containerTrouble(c)).length;
   if (bad) out.push(["down", `${bad} container${bad === 1 ? "" : "s"} down`]);

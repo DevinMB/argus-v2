@@ -113,3 +113,16 @@ func TestARunInterruptedByARestartIsSettledFromWhatIsPending(t *testing.T) {
 		t.Fatal("an empty /proc has no package manager")
 	}
 }
+
+func TestAStaleRunningRecordDoesNotMakeTheCompanionBusy(t *testing.T) {
+	// A record left "running" by a restart blocked patching and self-updates for good.
+	p, _, _ := newTestPatcher(t, false)
+	p.save(&PatchState{Run: 16, State: "running", At: 1})
+	if p.Busy() {
+		t.Fatal("a stale record on disk made the companion busy")
+	}
+	p.active.Store(true)
+	if !p.Busy() {
+		t.Fatal("a run in this process is busy")
+	}
+}

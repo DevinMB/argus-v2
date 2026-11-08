@@ -359,3 +359,9 @@ describe("failed units", () => {
     expect(attention(host)).toEqual([["down", "1 failed unit"]]);
   });
 });
+
+describe("a companion out of date", () => {
+  it("needs a look", () => {
+    expect(attention({ status: "ok", companion_stale: true, report: {} })).toEqual([["failing", "companion out of date"]]);
+  });
+});

@@ -328,3 +328,18 @@ def test_update_argus_goes_to_the_companion_on_its_machine(client, csrf):
     assert "argus_update" not in reply
     upd = client.get("/api/argus/version").json()["update"]
     assert (upd["state"], upd["summary"]) == ("rolled_back", "the old one is back")
+
+
+def test_a_companion_stuck_on_an_old_build_is_named_with_the_command_that_fixes_it(
+        client, csrf, clock, monkeypatch):
+    monkeypatch.setenv("ARGUS_COMMIT", "fd5c378113c9aaaa")
+    me = enroll(client, new_code(client, csrf)["code"], "argus").json()
+    report(client, me["token"], version="2.0.0-dev+5bfe622edb18")
+    body = client.get("/api/companions").json()
+    assert body["companions"][0]["companion_stale"] is False  # it may be updating now
+    assert "--code" not in body["update_command"] and "install.sh" in body["update_command"]
+    clock.now += 3 * 3600 + 1
+    report(client, me["token"], version="2.0.0-dev+5bfe622edb18")
+    assert client.get("/api/companions").json()["companions"][0]["companion_stale"] is True
+    report(client, me["token"], version="2.0.0-dev+fd5c378113c9")
+    assert client.get("/api/companions").json()["companions"][0]["companion_stale"] is False
