@@ -18,7 +18,10 @@ type GuestInstall struct {
 	Type string `json:"type"` // qemu or lxc
 	URL  string `json:"url"`
 	Pin  string `json:"pin"`
-	Code string `json:"code"`
+	Code string `json:"code"` // the request's id; with Reinstall, not sent to the guest
+	// Replace the companion already in the guest, keeping its enrollment (the
+	// install command without a code): Reinstall companion on a host's page.
+	Reinstall bool `json:"reinstall,omitempty"`
 }
 
 type GuestResult struct {
@@ -70,8 +73,15 @@ func (g GuestInstall) script() string {
 		"  elif command -v dnf >/dev/null 2>&1; then dnf install -y -q curl",
 		"  else echo 'no curl and no apk, apt-get or dnf to install it' >&2; exit 1; fi",
 		"fi",
-		fetch + " " + g.URL + "/companion/install.sh | sh -s -- " + args + " --code " + g.Code,
+		fetch + " " + g.URL + "/companion/install.sh | sh -s -- " + args + codeArg(g),
 	}, "\n")
+}
+
+func codeArg(g GuestInstall) string {
+	if g.Reinstall {
+		return "" // keeps the guest's enrollment
+	}
+	return " --code " + g.Code
 }
 
 // command is how this server runs the script in the guest.

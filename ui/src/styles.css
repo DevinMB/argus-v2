@@ -908,3 +908,7 @@ button.ctable-row:hover { background: var(--raise); }
 .pf-option:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .pf details.about .pf-row { margin-top: 8px; }
 .pf details.about .pf-note { margin-top: 6px; }
+.reinstall { flex-basis: 100%; display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line-strong);
+  border-radius: 8px; background: var(--panel); }
+.reinstall p { margin: 0; }
+.reinstall details .snippet { margin: 8px 0; }

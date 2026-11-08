@@ -14,12 +14,14 @@ one the scheduler writes from, so SQLite needs no locking.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import hashlib
 import hmac
 import json
 import os
 import re
+import secrets
 import shlex
 import time
 from pathlib import Path
@@ -1266,6 +1268,33 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         code, _expires = r.companions.new_code(name, ttl=GIVE_UP)
         request.app.state.guests.request(server["name"], vmid, g["type"], name, url, pin, code)
         return {"ok": True, "name": name}
+
+    @app.post("/api/companions/{cid}/reinstall")
+    async def reinstall_companion(cid: str, body: GuestInstall, request: Request,
+                                  _: Admin) -> dict:
+        """Reinstall a Proxmox guest's companion through its server, keeping the
+        enrollment. Other hosts get the command to run (409, the UI shows it)."""
+        r = rt(request)
+        views = r.companions.views()
+        host = next((c for c in views if c["id"] == cid), None)
+        if host is None:
+            raise HTTPException(404, "no such host")
+        names = {host["name"], ((host["report"] or {}).get("hostname") or "").split(".")[0]}
+        for server in views:
+            if server["read_only"] or server["status"] != "ok" or server["id"] == cid:
+                continue
+            for g in ((server["report"] or {}).get("proxmox") or {}).get("guests") or []:
+                if g["status"] == "running" and g["name"] and name_from(g["name"]) in names:
+                    url = body.url.rstrip("/")
+                    pin = request.app.state.tls_pin if url.startswith("https://") else None
+                    raw = base64.b32encode(secrets.token_bytes(10)).decode().lower()
+                    # A request id in a code's shape; never a code, nothing enrolls with it.
+                    rid = "-".join(raw[i:i + 4] for i in range(0, 16, 4))
+                    request.app.state.guests.request(server["name"], g["vmid"], g["type"],
+                                                     host["name"], url, pin, rid, reinstall=True)
+                    return {"by": server["name"], "vmid": g["vmid"]}
+        raise HTTPException(409, f"{host['name']} is not a running guest of a Proxmox server"
+                                 " with Argus: run the command on it")
 
     @app.put("/api/companions/{cid}/ignored")
     async def ignore_container(cid: str, body: Ignore, request: Request, _: Admin) -> dict:

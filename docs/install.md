@@ -77,7 +77,7 @@ Stacks it deployed keep running; their folders under `/var/lib/argus-companion/s
 docker compose pull && docker compose up -d
 ```
 
-Companions upgrade themselves: when Argus serves a different companion build, each host downloads it from Argus over its pinned connection, checks it against the sha256 in Argus's signed reply, installs it and restarts, within a minute or two. Not on a monitoring-only host, and not where the host's policy says `"manual_updates": true`; those, and companions from before self-update, are upgraded by running the **Add a host** command again without a code (`--code` left out keeps the enrollment).
+Companions upgrade themselves: when Argus serves a different companion build, each host downloads it from Argus over its pinned connection, checks it against the sha256 in Argus's signed reply, installs it and restarts, within a minute or two. Not on a monitoring-only host, and not where the host's policy says `"manual_updates": true`; those, and companions from before self-update, are upgraded with **Reinstall companion** on the host's page: a Proxmox guest's server does it for you, and for any other host the page shows the command to paste (Add a host's, without a code, which keeps the enrollment). A companion that has not caught up with Argus for three hours is marked **companion out of date**, with the same button.
 
 ## Back up Argus
 

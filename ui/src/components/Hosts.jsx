@@ -828,7 +828,60 @@ function NotFromGit({ host, session, reload }) {
   );
 }
 
-function HostActions({ host, session, reload }) {
+// Reinstall a host's companion: a Proxmox guest's server does it for you; any
+// other host gets the command, already trimmed (no code: the host stays as it is).
+function guestOf(host, hosts) {
+  for (const s of hosts) {
+    if (s.id === host.id || s.read_only || s.status !== "ok") continue;
+    const g = (s.report?.proxmox?.guests ?? []).find((x) => x.status === "running" && x.name && guestHostName(x.name) === host.name);
+    if (g) return { server: s, guest: g };
+  }
+  return null;
+}
+
+function Reinstall({ host, hosts, session, updateCommand, onClose }) {
+  const [asked, setAsked] = useState(null);
+  const [error, setError] = useState(null);
+  const via = guestOf(host, hosts);
+  const live = via && (hosts.find((h) => h.id === via.server.id)?.guest_installs ?? {})[via.guest.vmid];
+  const ask = async () => {
+    setError(null);
+    try { setAsked(await send("POST", `/api/companions/${host.id}/reinstall`, { url: window.location.origin }, session.csrf)); }
+    catch (e) { setError(e.message); }
+  };
+  const state = asked && live?.reinstall ? live.state : asked ? "waiting" : null;
+  return (
+    <div className="reinstall">
+      {via ? (
+        <>
+          <p className="small">{via.server.name} can reinstall it inside {via.guest.type === "lxc" ? "CT" : "VM"} {via.guest.vmid} for you. The host
+            stays as it is in Argus; only the companion is replaced, with Argus's current build.</p>
+          <div className="actions">
+            {!state && <button className="btn btn-small btn-primary" onClick={ask}>Have {via.server.name} reinstall it</button>}
+            {state && <span className={`small ${state === "ok" ? "st-up" : state === "failed" ? "st-failing" : "muted"}`}>
+              {state === "ok" ? "Reinstalled. It reports the new build within a minute."
+                : state === "failed" ? "That did not work; run the command below on the host instead."
+                : `${via.server.name} is reinstalling it…`}</span>}
+            <button className="btn btn-small" onClick={onClose}>Close</button>
+          </div>
+          {state === "failed" && live?.output && <pre className="log">{live.output}</pre>}
+          <details className="about"><summary>Or run it on the host yourself</summary>
+            <pre className="snippet command">{updateCommand}</pre><Copy text={updateCommand} /></details>
+        </>
+      ) : (
+        <>
+          <p className="small">Open a shell on {host.name} (SSH, or its console) and paste this, as root or a user who can sudo.
+            The host stays as it is in Argus; only the companion is replaced.</p>
+          <pre className="snippet command">{updateCommand}</pre>
+          <div className="actions"><Copy text={updateCommand} /><button className="btn btn-small" onClick={onClose}>Close</button></div>
+        </>
+      )}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function HostActions({ host, session, reload, hosts, updateCommand }) {
   const [mode, setMode] = useState(null);
   const [name, setName] = useState(host.name);
   const [error, setError] = useState(null);
@@ -858,7 +911,9 @@ function HostActions({ host, session, reload }) {
       {!mode && <>
         <button className="btn btn-small" onClick={() => { setName(host.name); setMode("rename"); }}>Rename</button>
         <button className="btn btn-small" onClick={() => setMode("remove")}>Remove</button>
+        {!host.read_only && <button className="btn btn-small" onClick={() => setMode("reinstall")}>Reinstall companion</button>}
       </>}
+      {mode === "reinstall" && <Reinstall host={host} hosts={hosts} session={session} updateCommand={updateCommand} onClose={() => setMode(null)} />}
       {mode === "rename" && (
         <form className="inline-form" onSubmit={rename}>
           <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="New name"
@@ -965,7 +1020,7 @@ function FailedUnits({ host, session, reload }) {
   );
 }
 
-function Overview({ host, suggestions, session, reload, updateCommand }) {
+function Overview({ host, suggestions, session, reload, updateCommand, hosts }) {
   const r = host.report ?? {};
   const look = attention(host);
   return (
@@ -974,11 +1029,9 @@ function Overview({ host, suggestions, session, reload, updateCommand }) {
         <Section title="its companion is out of date">
           <p className="small">
             This host's companion has not updated itself to Argus's build for hours, so its fixes are not reaching this host.
-            Run this on the host once (root, or with sudo); it keeps the host as it is in Argus and only replaces the companion.
-            From then on it updates itself.
+            Reinstall it once; from then on it updates itself.
           </p>
-          <pre className="snippet command">{updateCommand}</pre>
-          <div className="actions"><Copy text={updateCommand} /></div>
+          {session?.signed_in && <Reinstall host={host} hosts={hosts} session={session} updateCommand={updateCommand} onClose={() => {}} />}
         </Section>
       )}
       <Section title="needs a look">
@@ -1015,7 +1068,7 @@ function Overview({ host, suggestions, session, reload, updateCommand }) {
   );
 }
 
-function HostDetail({ host, tab, session, reload, refs, backups, hostNames, suggestions, updateCommand }) {
+function HostDetail({ host, tab, session, reload, refs, backups, hostNames, suggestions, updateCommand, hosts }) {
   const r = host.report ?? {};
   const [tone, word] = STATUS[host.status];
   const tabs = [["overview", "Overview"]];
@@ -1035,14 +1088,14 @@ function HostDetail({ host, tab, session, reload, refs, backups, hostNames, sugg
         <span className="muted small hd-seen">{host.last_seen ? `reported ${agoText(host.age)}` : "waiting for its first report"}</span>
       </header>
       {host.report && <p className="muted small hd-sub">{[r.os, r.kernel, r.arch, r.version && `companion ${r.version}`, host.address].filter(Boolean).join(" · ")}</p>}
-      <HostActions host={host} session={session} reload={reload} />
+      <HostActions host={host} session={session} reload={reload} hosts={hosts} updateCommand={updateCommand} />
       <nav className="subtabs hd-tabs">
         {tabs.map(([k, label]) => (
           <a key={k} href={`#/hosts?host=${encodeURIComponent(host.name)}&tab=${k}`} aria-current={k === current ? "page" : undefined}>{label}</a>
         ))}
       </nav>
       <div className="hd-body">
-        {current === "overview" && <Overview host={host} suggestions={suggestions} session={session} reload={reload} updateCommand={updateCommand} />}
+        {current === "overview" && <Overview host={host} suggestions={suggestions} session={session} reload={reload} updateCommand={updateCommand} hosts={hosts} />}
         {current === "containers" && (
           <Section title="containers" about="Ignore sets aside one you do not care about (a one-off that exited): it moves to the bottom and no longer counts as trouble. Stopped containers never page.">
             {r.containers.length ? <Containers list={r.containers} host={host} session={session} reload={reload} />
@@ -1257,7 +1310,7 @@ export default function Hosts({ data, session, reload, start, refs = [] }) {
         <HostDetail host={selected} tab={route.tab} session={session} reload={reload} refs={refs}
                     backups={backups.filter((b) => b.server !== selected.name)} hostNames={hostNames}
                     suggestions={(start?.suggestions ?? []).filter((g) => g.host === selected.name)}
-                    updateCommand={data?.update_command ?? ""} />
+                    updateCommand={data?.update_command ?? ""} hosts={hosts} />
       </section>
     );
   }
