@@ -581,7 +581,8 @@ def track(state: dict, check: dict | None, beats: dict[str, dict], now: float,
     if check is None and stack is None and not deploy and not placed:
         pass
     elif check is None:
-        add("healthy", "not_wired", "No check linked in argus.yml")
+        add("healthy", "not_wired",
+            "No check found: name one after the repo, or link one in argus.yml")
     elif (stack is not None or deploy or placed) and not deployed:
         add("healthy", "pending", f"{check['name']} is {check['status']} on the previous deploy")
     elif check["status"] == "paused":
@@ -597,3 +598,17 @@ def track(state: dict, check: dict | None, beats: dict[str, dict], now: float,
         why = f": {check['last_error']}" if check.get("last_error") else ""
         add("healthy", "failed", f"{check['name']} is {check['status']}{why}")
     return steps
+
+
+def check_for(repo: str, checks: Sequence) -> str:
+    """The check that says whether a repo's app is healthy, when argus.yml does
+    not name one: the check named after the repo, else the only one named
+    "<repo>-..." (the one that alerts, when several do not). "" if unsure."""
+    name = repo.lower().rsplit("/", 1)[-1]
+    by = {c.name: c for c in checks}
+    if name in by:
+        return name
+    near = [c for c in checks if c.name.startswith(name + "-")]
+    alerting = [c for c in near if c.severity == "critical"]
+    pick = near if len(near) == 1 else alerting if len(alerting) == 1 else []
+    return pick[0].name if pick else ""

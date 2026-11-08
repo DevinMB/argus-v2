@@ -444,3 +444,20 @@ def test_one_failed_poll_is_not_shown():
     assert p.shown_error == "HTTP 500"
     p.last_success, p.failures = None, 1
     assert p.shown_error == "HTTP 500"
+
+
+def test_a_repo_finds_its_check_by_name_when_argus_yml_does_not_link_one():
+    from types import SimpleNamespace as C
+
+    from argus.github import check_for
+    checks = [C(name="sassy-routes", severity="critical"),
+              C(name="sassy-routes-edge-1", severity="warning"),
+              C(name="bouy-lab-frontend-1", severity="warning"),
+              C(name="mars-console", severity="warning"),
+              C(name="mars-jobmanager", severity="warning"),
+              C(name="vault-mcp-a", severity="warning"), C(name="vault-mcp-b", severity="critical")]
+    assert check_for("sassy-routes", checks) == "sassy-routes"   # named after the repo
+    assert check_for("DevinMB/bouy-lab", checks) == "bouy-lab-frontend-1"  # the only one
+    assert check_for("vault-mcp", checks) == "vault-mcp-b"  # several: the one that alerts
+    assert check_for("mars", checks) == ""  # several, none alerts: no guess
+    assert check_for("atlas", checks) == ""
