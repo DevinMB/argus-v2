@@ -502,20 +502,41 @@ func (c *Collector) rebootRequired() *bool {
 		return &yes
 	}
 	if has("needs-restarting") {
-		if _, code, err := c.run("needs-restarting", "-r"); err == nil {
-			if code == 1 {
-				return &yes
-			}
-			if code == 0 {
-				return &no
-			}
+		// It exits 1 both when a reboot is needed and when it fails (inside this
+		// read-only sandbox dnf cannot write its cache), so read what it says
+		// (slayerz-lab said "needs a reboot" right after rebooting).
+		out, code, err := c.run("needs-restarting", "-r")
+		low := strings.ToLower(out)
+		switch {
+		case err == nil && strings.Contains(low, "reboot is required"):
+			return &yes
+		case err == nil && (code == 0 || strings.Contains(low, "should not be necessary")):
+			return &no
 		}
-		return nil
+		// No verdict: the running kernel against the newest one installed.
+		return c.newerKernelInstalled()
 	}
 	if has("apt-get") {
 		return &no // Debian and Ubuntu write the file when they need one
 	}
 	return nil
+}
+
+// newerKernelInstalled: whether a kernel newer than the running one is installed
+// (rpm-based hosts), or nil when that cannot be told.
+func (c *Collector) newerKernelInstalled() *bool {
+	running := firstLine("/proc/sys/kernel/osrelease")
+	out, code, err := c.run("rpm", "-q", "--last", "kernel-core")
+	if err != nil || code != 0 || running == "" {
+		return nil
+	}
+	lines := nonEmptyLines(out)
+	if len(lines) == 0 {
+		return nil
+	}
+	newest := strings.TrimPrefix(strings.Fields(lines[0])[0], "kernel-core-")
+	v := newest != running
+	return &v
 }
 
 // proxmox reads guests and backups in the background: a backup storage on a
