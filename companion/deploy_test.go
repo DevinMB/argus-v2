@@ -198,3 +198,16 @@ func TestAProjectRunningFromAnotherFolderIsNotStartedTwice(t *testing.T) {
 		t.Fatalf("nothing may run: %v", f.calls)
 	}
 }
+
+// Restarted (every companion restarts on a self-update), a companion has no
+// plan until Argus replies: its first report still says what it deployed.
+func TestAfterARestartTheFirstReportStillSaysWhatIsDeployed(t *testing.T) {
+	d, _ := newTestDeployer(t)
+	plan := &DeployPlan{Stacks: []StackSpec{stack("d1", "v1")}}
+	d.Apply(plan)
+	again := newDeployer(d.StateDir, d.PolicyPath) // the same folders, a fresh process
+	got := again.Results(nil)
+	if len(got) != 1 || got[0].Digest != "d1" || got[0].Result != "ok" {
+		t.Fatalf("results after a restart: %+v", got)
+	}
+}
