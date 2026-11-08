@@ -1446,6 +1446,29 @@ function useHostRoute() {
   return route;
 }
 
+// A host just uninstalled: said for ten minutes, or until dismissed. Leave
+// Argus keeps the week's list.
+const FRESH = 600;
+function Uninstalled({ list }) {
+  const [gone, setGone] = useState(() => { try { return JSON.parse(localStorage.getItem("argus.uninstalledSeen") || "[]"); } catch { return []; } });
+  const now = Date.now() / 1000;
+  const show = list.filter((u) => now - u.at < FRESH && !gone.includes(`${u.name}-${u.at}`));
+  const dismiss = (k) => {
+    const next = [...gone, k].slice(-20);
+    setGone(next);
+    try { localStorage.setItem("argus.uninstalledSeen", JSON.stringify(next)); } catch { /* fine */ }
+  };
+  return show.map((u) => {
+    const k = `${u.name}-${u.at}`;
+    const log = u.log ? u.log.charAt(0).toUpperCase() + u.log.slice(1) : "";
+    return (
+      <p key={k} className="form-ok small" role="status">
+        <strong>{u.name} is uninstalled</strong> ({agoText(now - u.at)}).{log && ` ${log}${/[.:]$/.test(log) ? "" : "."}`}{" "}
+        <button className="link-button small" onClick={() => dismiss(k)}>Dismiss</button></p>
+    );
+  });
+}
+
 export default function Hosts({ data, session, reload, start, refs = [] }) {
   const [adding, setAdding] = useState(false);
   const route = useHostRoute();
@@ -1480,10 +1503,7 @@ export default function Hosts({ data, session, reload, start, refs = [] }) {
           ? <button className="btn btn-primary" onClick={() => setAdding(true)}>Add a host</button>
           : <a className="btn" href="#/account">Sign in to add a host</a>)}
       </div>
-      {(data?.uninstalled ?? []).map((u) => (
-        <p key={`${u.name}-${u.at}`} className="form-ok small" role="status">
-          <strong>{u.name} is uninstalled</strong> ({agoText(Date.now() / 1000 - u.at)}). {u.log}</p>
-      ))}
+      <Uninstalled list={data?.uninstalled ?? []} />
       {route.name && <p className="banner banner-warn">There is no host called {route.name} any more. <a href="#/hosts">All hosts</a></p>}
       {adding && session?.signed_in && (
         <AddHost key={route.add || ""} session={session} hosts={hosts} tlsPin={data?.tls_pin} initialName={route.add || ""}
