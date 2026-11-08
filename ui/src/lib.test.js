@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle, httpText, endpoint, duplicates, placeOf } from "./lib.js";
+import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle, httpText, endpoint, duplicates, placeOf, machineOf } from "./lib.js";
 
 const c = (name, status, extra = {}) => ({
   name, status, site: "B", group: "apps", target: `http://${name}/`, ...extra,
@@ -406,5 +406,16 @@ describe("checks of one port, and where a check runs", () => {
     expect(placeOf(c("b", "http", "https://shop.example/"), hosts)).toBe("Websites");
     expect(placeOf(c("c", "http", "http://192.168.10.5:8123/"), hosts)).toBe("Other devices");
     expect(placeOf(c("d", "tcp", "127.0.0.1:8787", { companion: "atlas-lab" }), hosts)).toBe("atlas-lab");
+  });
+});
+
+describe("machineOf", () => {
+  it("puts a guest under its Proxmox server and a lone host under itself", () => {
+    const hosts = [
+      { name: "butts-lab", report: { proxmox: { guests: [{ name: "mars-b", vmid: 108 }] } } },
+      { name: "mars-b", report: {} },
+      { name: "slayerz-lab", report: {} },
+    ];
+    expect(machineOf(hosts)).toEqual({ "butts-lab": "butts-lab", "mars-b": "butts-lab", "slayerz-lab": "slayerz-lab" });
   });
 });
