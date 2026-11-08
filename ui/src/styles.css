@@ -280,8 +280,9 @@ button { font: inherit; color: inherit; }
 .tabs a:hover { color: var(--text); }
 .tabs a[aria-current="page"] { background: var(--raise); color: var(--text); }
 /* Settings pages: Account, GitHub and Config, one click apart. */
-.subtabs { display: flex; gap: 4px; padding-top: 20px; }
-.subtabs a { padding: 6px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-size: 13px; }
+.subtabs { display: flex; gap: 4px; padding-top: 20px; overflow-x: auto; scrollbar-width: none; }
+.subtabs::-webkit-scrollbar { display: none; }
+.subtabs a { white-space: nowrap; flex: none; padding: 6px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-size: 13px; }
 .subtabs a:hover { color: var(--text); }
 .subtabs a[aria-current="page"] { background: var(--raise); color: var(--text); }
 .tab-badge {
@@ -931,3 +932,15 @@ button.ctable-row:hover { background: var(--raise); }
 /* A destructive action sits last and looks it, without shouting. */
 .btn-quiet-danger { color: var(--muted); border-color: transparent; background: none; }
 .btn-quiet-danger:hover { color: var(--down); border-color: rgb(255 107 94 / 0.4); }
+
+.hd-build { margin: 2px 0 0; font: 11.5px var(--mono); overflow-wrap: anywhere; }
+
+/* Settings on a wide screen: the section's name on the left, its controls on
+   the right (Graphite's settings layout), so a page reads as a list of sections. */
+@media (min-width: 1100px) {
+  .settings { max-width: 1000px; }
+  .settings > .panel { display: grid; grid-template-columns: 200px minmax(0, 1fr); column-gap: 32px; row-gap: 0; align-items: start; }
+  .settings > .panel > * { grid-column: 2; margin-top: 14px; }
+  .settings > .panel > .eyebrow:first-child { grid-column: 1; grid-row: 1 / span 60; margin: 2px 0 0; line-height: 1.5; }
+  .settings > .panel > :nth-child(2) { margin-top: 0; }
+}

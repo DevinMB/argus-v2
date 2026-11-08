@@ -195,7 +195,7 @@ function WhatPages({ view, act, say }) {
     ["checks", "A check goes down, and when it recovers"],
     ["jobs", "A scheduled run fails or is overdue"],
     ["heartbeats", "A timer goes quiet"],
-    ["companions", "Any host stops reporting, or a disk on it passes 95% (always pages)"],
+    ["companions", "Any host stops reporting, or a disk on it passes 95% (always alerts)"],
   ];
   return (
     <div className="panel">
