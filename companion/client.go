@@ -186,6 +186,8 @@ type Reply struct {
 	GuestInstalls []GuestInstall `json:"guest_installs"`
 	// On the machine Argus runs on: update Argus (Settings, Update Argus).
 	ArgusUpdate *ArgusUpdate `json:"argus_update"`
+	// Uninstall from this host (Uninstall on its page, confirmed with the password).
+	Uninstall bool `json:"uninstall"`
 }
 
 // Build is the companion Argus serves for this host's CPU.
