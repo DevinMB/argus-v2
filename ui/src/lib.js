@@ -67,7 +67,7 @@ export function isPublic(check) {
 export function searchText(check, sites) {
   return [
     check.name, check.target, check.group, check.kind, check.severity,
-    check.severity === "critical" && "pages",
+    check.severity === "critical" && "pages alerts",
     isPublic(check) && "public",
     `site ${check.site}`, siteName(sites, check.site),
   ].filter(Boolean).join(" ").toLowerCase();
@@ -261,6 +261,17 @@ export function lifecycle(repo) {
   const check = healthy?.status === "not_wired" ? " (no health check)" : "";
   return out("live", "up", "Up to date", `Live${where}${check}. Last change: ${change}.`, undefined, false,
     `live${where}${check}`);
+}
+
+// An HTTP failure in words: what happened and what to do, with the code kept for
+// anyone who needs it (docs/VOICE.md: never only an HTTP code).
+export function httpText(status) {
+  if (status === 401) return "You are signed out (HTTP 401). Sign in and try again.";
+  if (status === 403) return "Argus refused this (HTTP 403). Reload the page, sign in again and retry.";
+  if (status === 404) return "Argus does not have this (HTTP 404). It may be on an older build: reload the page.";
+  if (status >= 502 && status <= 504) return `Argus did not answer (HTTP ${status}). It may be restarting: try again in a minute.`;
+  if (status >= 500) return `Argus hit an error (HTTP ${status}). Its log has the details: docker logs argus.`;
+  return `The request failed (HTTP ${status}).`;
 }
 
 // GitHub's default merge titles say little ("Merge pull request #14 from

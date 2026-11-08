@@ -135,9 +135,9 @@ function PullToken({ session, d, onSaved }) {
   };
   return (
     <form className="dform dnote" onSubmit={save}>
-      <p className="small"><strong>Private images?</strong> If your stacks use images only you can pull (ghcr.io/you/…), hosts need
-        a read token: on GitHub, Settings, Developer settings, Personal access tokens, <strong>Tokens (classic)</strong>, with
-        only <code>read:packages</code>. Skip this if every image is public.</p>
+      <p className="small"><strong>Private images?</strong> If only you can pull some images (<code>ghcr.io/you/…</code>), hosts need a read token.
+        Make one on GitHub under Settings, Developer settings, Personal access tokens, <strong>Tokens (classic)</strong>,
+        with only <code>read:packages</code>. Skip this if every image is public.</p>
       <div className="field-row">
         <input type="password" value={token} onChange={(e) => setToken(e.target.value.trim())} autoComplete="off"
                placeholder="ghp_…" aria-label="Read token for private images" />

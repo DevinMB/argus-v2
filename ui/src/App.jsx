@@ -278,9 +278,9 @@ export default function App() {
                                 tone={ss.down ? "down" : ss.failing ? "failing" : "up"}
                                 sub={siteNote(ss)} />;
                 })}
-                {checks.length > 0 && <Meter label="Pages if down" value={critical.filter((c) => c.status === "up").length}
+                {checks.length > 0 && <Meter label="Alerts you if down" value={critical.filter((c) => c.status === "up").length}
                        total={critical.length} tone="accent"
-                       sub={critical.length ? `critical checks up${pausedCritical ? `, ${pausedCritical} paused` : ""}`
+                       sub={critical.length ? `checks that alert you are up${pausedCritical ? `, ${pausedCritical} paused` : ""}`
                          : "nothing alerts you yet: choose Alert on a check"} />}
               </div>
             </div>

@@ -829,9 +829,9 @@ function NotFromGit({ host, session, reload }) {
   if (!host.adoptable?.length) return null;
   return (
     <Section title="running here, not deployed by Argus"
-      about={<>Compose projects started by hand or another tool. <strong>Deploy from git</strong> puts each
-        one's compose file in your deploy repo (its secrets stay in Argus) and from then on a merge
-        redeploys it, in the same folder, with no restart if nothing changed.</>}>
+      about={<>Compose projects started by hand or by another tool. <strong>Deploy from git</strong> puts each
+        one's compose file in your deploy repo; its secrets stay in Argus. From then on, a merge redeploys it in
+        the same folder. If nothing changed, nothing restarts.</>}>
       <ul className="rows">{host.adoptable.map((p) => (
         <li key={p.project}>
           <span className="dot dot-unknown" />
@@ -936,8 +936,8 @@ function HostActions({ host, session, reload, hosts, updateCommand }) {
     <div className="host-actions">
       {!mode && <>
         <button className="btn btn-small" onClick={() => { setName(host.name); setMode("rename"); }}>Rename</button>
-        <button className="btn btn-small" onClick={() => setMode("remove")}>Remove</button>
         {!host.read_only && <button className="btn btn-small" onClick={() => setMode("reinstall")}>Reinstall companion</button>}
+        <button className="btn btn-small btn-quiet-danger" onClick={() => setMode("remove")}>Remove</button>
       </>}
       {mode === "reinstall" && <Reinstall host={host} hosts={hosts} session={session} updateCommand={updateCommand} onClose={() => setMode(null)} />}
       {mode === "rename" && (
@@ -995,8 +995,8 @@ function NotWatched({ suggestions, session, reload }) {
   );
   return (
     <Section title="not watched yet"
-      about={<>Ports these containers publish that no check covers. Argus knocks on each once to pick the check:
-        HTTP when it answers like a web app (it proves the app answers), TCP otherwise (it proves the port is open).
+      about={<>Ports these containers publish that no check covers. Argus tries each one once to pick the check.
+        A port that answers like a web app gets an HTTP check, which proves the app answers. Any other port gets a TCP check, which proves it is open.
         <strong> Watch</strong> shows a problem in Argus; <strong>Watch and alert me</strong> also sends an alert.
         A good rule: alert for what you or others use, watch the rest. Change either later on the Checks page.</>}>
       {done && <p className="form-ok small" role="status">{done} <a href="#/">See it on Checks</a></p>}
@@ -1062,6 +1062,11 @@ function Overview({ host, suggestions, session, reload, updateCommand, hosts }) 
       )}
       <Section title="needs a look">
         {look.length ? <Tags items={look} /> : <p className="muted small">Nothing. {hostSentence(host)}</p>}
+        {r.reboot_required && (
+          <p className="muted small">{host.patching?.plan?.enabled
+            ? "Its next patch window reboots it. To do it sooner, press Patch now on the Patching tab."
+            : "Give it a patch window on the Patching tab and Argus reboots it there."}</p>
+        )}
         {r.docker_error && <p className="st-failing small">Docker: {r.docker_error}</p>}
         {r.updates?.error && <p className="st-failing small">Updates: {r.updates.error}</p>}
       </Section>
@@ -1245,7 +1250,7 @@ function PatchPlan({ hosts, backups, session, reload }) {
 
       {servers.length > 0 && (
         <Section title={`proxmox servers (${servers.length})`}
-          about="A server's update can need a reboot, which restarts every guest on it. So a server is patched only when every guest on it has a recent backup (if it breaks, you reinstall Proxmox and restore them), one server at a time, never while another server's last run failed, and on its own day, away from the guests'. Proxmox keeps the previous kernel, so a bad one is undone from the boot menu. Major versions (9 to 10) stay manual.">
+          about="A server's update can need a reboot, and a reboot restarts every guest on it. So Argus patches a server only when every guest on it has a recent backup: if the server breaks, you reinstall Proxmox and restore them. It patches one server at a time, on its own day, and never while another server's last run failed. Proxmox keeps the previous kernel, so you can boot back into it. Major versions (9 to 10) stay manual.">
           {[...firsts, ...(argusHome ? [argusHome] : [])].map((s) => (
             <ServerPlan key={s.id} host={s} session={session} reload={reload} put={put}
                         defaultDay={serverDay(s)} last={s === argusHome} state={state(s)} />))}
@@ -1254,7 +1259,7 @@ function PatchPlan({ hosts, backups, session, reload }) {
 
       {others.length > 0 && (
         <Section title={`other hosts (${others.length})`}
-          about="Argus cannot see a backup for these. If something backs them up (a VM snapshot, a backup job), have it report to Argus with a heartbeat or job, then link it on the host's Patching tab. A host with a ZFS root is snapshotted by Argus before each run.">
+          about="Argus cannot see a backup for these. If a VM snapshot or a backup job covers one, have it report to Argus as a timer or a run. Then link it on the host's Patching tab. Argus snapshots a host with a ZFS root itself before each run.">
           <ul className="rows">{others.map((h) => {
             const [tone, text] = state(h);
             return (

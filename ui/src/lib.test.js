@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle } from "./lib.js";
+import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle, httpText } from "./lib.js";
 
 const c = (name, status, extra = {}) => ({
   name, status, site: "B", group: "apps", target: `http://${name}/`, ...extra,
@@ -372,5 +372,13 @@ describe("tidyTitle", () => {
     expect(tidyTitle("Merge pull request #14 from DevinMB/dependabot/pip/updates-2e49036dea")).toBe("a Dependabot update (#14)");
     expect(tidyTitle("Merge pull request #15 from DevinMB/harden/chromium-sandbox")).toBe("pull request #15");
     expect(tidyTitle("Bump httpx")).toBe("Bump httpx");
+  });
+});
+
+describe("httpText", () => {
+  it("says what happened and what to do, keeping the code", () => {
+    expect(httpText(502)).toMatch(/^Argus did not answer \(HTTP 502\)\. It may be restarting/);
+    expect(httpText(403)).toMatch(/sign in again/);
+    expect(httpText(418)).toBe("The request failed (HTTP 418).");
   });
 });
