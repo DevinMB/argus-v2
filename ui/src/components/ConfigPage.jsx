@@ -71,8 +71,8 @@ export function CheckForm({ session, check, initial, sites, groups, hosts, onDon
           <datalist id="groups">{groups.map((g) => <option key={g} value={g} />)}</datalist></label>
         <label className="field"><span>When it is down</span>
           <select value={f.severity} onChange={set("severity")}>
-            <option value="warning">Show it here</option>
-            <option value="critical">Page me</option>
+            <option value="warning">Dashboard only</option>
+            <option value="critical">Alert me</option>
           </select></label>
         <label className="field"><span>Every</span>
           <select value={f.interval} onChange={set("interval")}>

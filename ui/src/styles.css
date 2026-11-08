@@ -954,3 +954,6 @@ button.ctable-row:hover { background: var(--raise); }
 .quiet-details > summary:hover { color: var(--text); }
 .quiet-details[open] > summary { margin-bottom: 6px; }
 .server-plan-change { margin-left: auto; }
+
+/* Scrolled to from Add a check: clear of the sticky header. */
+#watch-more, .check-form { scroll-margin-top: 88px; }
