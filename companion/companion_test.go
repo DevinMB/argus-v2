@@ -282,3 +282,20 @@ func TestValidationErrorsAreReadable(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestTheRunningKernelAgainstTheNewestInstalled(t *testing.T) {
+	running := firstLine("/proc/sys/kernel/osrelease")
+	c := newCollector()
+	c.run = func(name string, args ...string) (string, int, error) {
+		return "kernel-core-" + running + "    Sun 08 Nov 2026 05:52:01 AM EST\nkernel-core-5.14.0-1.el9    Sat\n", 0, nil
+	}
+	if r := c.newerKernelInstalled(); r == nil || *r {
+		t.Fatalf("running the newest kernel is no reboot: %v", r)
+	}
+	c.run = func(name string, args ...string) (string, int, error) {
+		return "kernel-core-9.9.9-1.el9.x86_64    Sun 08 Nov 2026\nkernel-core-" + running + "    Sat\n", 0, nil
+	}
+	if r := c.newerKernelInstalled(); r == nil || !*r {
+		t.Fatalf("a newer kernel installed needs a reboot: %v", r)
+	}
+}
