@@ -272,6 +272,22 @@ function Stacks({ stacks, session, reload }) {
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const RUN_TONE = { ok: "up", failed: "down", running: "accent", granted: "accent", rebooting: "accent" };
 
+function ExemptRows({ guests, session, mark }) {
+  return (
+    <ul className="rows">{guests.map((g) => (
+      <li key={g.vmid}>
+        <span className="dot dot-hollow" />
+        <span className="row-main">{g.name || g.vmid} <span className="muted mono">{g.type === "lxc" ? "CT" : "VM"} {g.vmid}</span></span>
+        <span className="row-note" />
+        <span className="row-act">{session?.signed_in && (
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => mark(g, false)}
+                  title="Count it again: the server waits for its backup">Count it again</button>
+        )}</span>
+      </li>
+    ))}</ul>
+  );
+}
+
 function GuestsNet({ host, days, session, reload }) {
   const [error, setError] = useState(null);
   const guests = guestsNet(host, days);
@@ -287,11 +303,17 @@ function GuestsNet({ host, days, session, reload }) {
   };
   return (
     <div className="guests-net">
-      <p className={`small ${short.length ? "st-failing" : "st-up"}`}>
+      <p className={`small ${short.length ? "st-failing" : "muted"}`}>
         {short.length === 0 ? `All ${guests.length - exempt.length} guests have a backup from the last ${days} days.`
           : `${short.length} of ${guests.length} guests have no backup from the last ${days} days, so Argus will not patch this server yet:`}
       </p>
-      {(short.length > 0 || exempt.length > 0) && (
+      {short.length === 0 && exempt.length > 0 && (
+        <details className="quiet-details">
+          <summary className="small muted">{exempt.length} left out of backups on purpose: {exempt.map((g) => g.name || g.vmid).join(", ")}</summary>
+          <ExemptRows guests={exempt} session={session} mark={mark} />
+        </details>
+      )}
+      {short.length > 0 && (
         <ul className="rows">{[...short, ...exempt.filter((g) => g.ok)].map((g) => (
           <li key={g.vmid}>
             <span className={`dot dot-${g.ok ? "hollow" : "failing"}`} />
@@ -1198,6 +1220,9 @@ function PatchPlan({ hosts, backups, session, reload }) {
     <div className="patch-plan">
       <Section title={`guests (${guests.length})`}
         about="Each guest is patched with all its updates and rebooted when an update needs it, one guest at a time, only when its Proxmox backup is recent. Change any one guest on its own page.">
+        {ready.length === 0 ? (
+          <p className="small muted">Every guest has a plan. A guest added later shows up here, ready to join it.</p>
+        ) : <>
         <p className="small">One plan for every guest. Its backup is the one its Proxmox server makes, found for you.</p>
         <div className="form-grid">
           <label className="field"><span>Day</span>
@@ -1213,11 +1238,12 @@ function PatchPlan({ hosts, backups, session, reload }) {
           <span>Reboot when an update needs it</span></label>
         {session?.signed_in && (
           <div className="actions">
-            <button className="btn btn-primary" disabled={busy || ready.length === 0} onClick={turnOn}>
-              {ready.length ? `Turn on for ${ready.length} guest${ready.length === 1 ? "" : "s"}` : "Every guest has a plan"}</button>
+            <button className="btn btn-primary" disabled={busy} onClick={turnOn}>
+              {`Turn on for ${ready.length} guest${ready.length === 1 ? "" : "s"}`}</button>
             <span className="muted small">Guests that already have a plan keep it.</span>
           </div>
         )}
+        </>}
         {noBackup.length > 0 && (
           <div className="no-backup">
             <p className="small st-failing">
@@ -1246,9 +1272,10 @@ function PatchPlan({ hosts, backups, session, reload }) {
           const b = backupOf(h);
           return (
             <li key={h.id}><span className={`dot dot-${tone === "unknown" ? (recent(h) ? "hollow" : "failing") : tone}`} />
-              <span className="row-main"><a href={`#/hosts?host=${encodeURIComponent(h.name)}&tab=patching`}>{h.name}</a>
-                <span className="row-sub muted">{b?.at ? `backed up ${agoText(Date.now() / 1000 - b.at)} by ${b.server}` : `no backup on ${b?.server ?? "its server"}`}</span></span>
-              <span className={`row-note st-${tone}`}>{text}</span><span className="row-act" /></li>
+              <span className="row-main"><a className="quiet-link" href={`#/hosts?host=${encodeURIComponent(h.name)}&tab=patching`}>{h.name}</a>
+                <span className="row-sub muted">{b?.at ? `backed up ${agoText(Date.now() / 1000 - b.at)} by ${b.server}`
+                  : h.patching.plan.no_backup ? "patched without a backup, your choice" : `no backup on ${b?.server ?? "its server"}`}</span></span>
+              <span className={`row-note ${tone === "up" ? "" : `st-${tone}`}`}>{text}</span><span className="row-act" /></li>
           );
         })}</ul>
       </Section>
@@ -1270,8 +1297,9 @@ function PatchPlan({ hosts, backups, session, reload }) {
             return (
               <li key={h.id}><span className={`dot dot-${tone === "unknown" ? "hollow" : tone}`} />
                 <span className="row-main">{h.name}<span className="row-sub muted">{h.patching?.safety?.net}</span></span>
-                <span className={`row-note st-${tone}`}>{text}</span>
-                <span className="row-act"><a className="btn btn-small" href={`#/hosts?host=${encodeURIComponent(h.name)}&tab=patching`}>Set up</a></span></li>
+                <span className={`row-note ${tone === "up" ? "" : `st-${tone}`}`}>{text}</span>
+                <span className="row-act"><a className={`btn btn-small ${h.patching?.plan?.enabled ? "btn-ghost" : ""}`}
+                  href={`#/hosts?host=${encodeURIComponent(h.name)}&tab=patching`}>{h.patching?.plan?.enabled ? "Change" : "Set up"}</a></span></li>
             );
           })}</ul>
         </Section>
@@ -1285,30 +1313,38 @@ function ServerPlan({ host, session, reload, put, defaultDay, last, state }) {
   const [day, setDay] = useState(pt.enabled ? pt.day : defaultDay);
   const [time, setTime] = useState(pt.enabled ? pt.time : "03:00");
   const [error, setError] = useState(null);
+  const [editing, setEditing] = useState(false);
   const [tone, text] = state;
+  const changed = !pt.enabled || Number(day) !== pt.day || time !== pt.time;
   const save = async (on) => {
     setError(null);
     try {
       await put(host, { enabled: on, day: Number(day), time, level: "full", reboot: true,
                         backup: "pve:guests", backup_days: pt.backup_days || 8 });
+      setEditing(false);
       reload();
     } catch (e) { setError(e.message); }
   };
+  const canEdit = session?.signed_in && !host.read_only;
   return (
     <div className="server-plan">
       <div className="server-plan-head">
         <a href={`#/hosts?host=${encodeURIComponent(host.name)}&tab=patching`}><strong>{host.name}</strong></a>
-        <span className={`small st-${tone}`}>{text}</span>
-        {last && <span className="muted small">Argus runs here: patched last</span>}
+        <span className={`small ${tone === "up" ? "" : `st-${tone}`}`}>{text}</span>
+        {last && <span className="muted small">patched last: Argus runs here</span>}
+        {canEdit && pt.enabled && !editing && (
+          <button className="link-button small server-plan-change" onClick={() => setEditing(true)}>Change</button>)}
       </div>
       <GuestsNet host={host} days={pt.backup_days || 8} session={session} reload={reload} />
-      {session?.signed_in && !host.read_only && (
+      {canEdit && (editing || !pt.enabled) && (
         <div className="inline-form">
           <select value={day} onChange={(e) => setDay(Number(e.target.value))} aria-label="Day">
             {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}</select>
           <input type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time" />
-          <button className="btn btn-small btn-primary" onClick={() => save(true)}>{pt.enabled ? "Save" : "Turn on"}</button>
-          {pt.enabled && <button className="btn btn-small" onClick={() => save(false)}>Turn off</button>}
+          <button className={`btn btn-small ${changed ? "btn-primary" : ""}`} disabled={!changed} onClick={() => save(true)}>
+            {pt.enabled ? "Save" : "Turn on"}</button>
+          {editing && <button className="btn btn-small" onClick={() => { setEditing(false); setDay(pt.day); setTime(pt.time); }}>Cancel</button>}
+          {editing && <button className="btn btn-small btn-quiet-danger" onClick={() => save(false)}>Turn off</button>}
         </div>
       )}
       {error && <p className="form-error" role="alert">{error}</p>}

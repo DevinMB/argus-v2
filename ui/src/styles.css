@@ -946,3 +946,11 @@ button.ctable-row:hover { background: var(--raise); }
 }
 .dupes { border-color: rgb(255 225 74 / 0.35); }
 .dupes .rows li { grid-template-columns: minmax(0, 1fr) auto; }
+
+.quiet-link { color: var(--text); text-decoration: none; }
+.quiet-link:hover { text-decoration: underline; }
+.quiet-details > summary { cursor: pointer; list-style: none; }
+.quiet-details > summary::-webkit-details-marker { display: none; }
+.quiet-details > summary:hover { color: var(--text); }
+.quiet-details[open] > summary { margin-bottom: 6px; }
+.server-plan-change { margin-left: auto; }
