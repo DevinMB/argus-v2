@@ -417,3 +417,32 @@ def test_pending_packages_and_why_reach_the_host_page(client, csrf):
     assert r.status_code == 200, r.text
     got = client.get("/api/companions").json()["companions"][0]["report"]["updates"]["packages"]
     assert got[0]["from"] == "3.5.1-1" and got[0]["cves"] == ["CVE-2026-1001"]
+def test_leave_argus_lists_the_hosts_and_asks_each_with_the_password_twice(client, csrf):
+    from test_auth import PASSWORD
+    a = enroll(client, new_code(client, csrf)["code"], "web").json()
+    enroll(client, new_code(client, csrf, read_only=True)["code"], "nas")
+    view = client.get("/api/leave").json()
+    assert sorted(h["name"] for h in view["hosts"]) == ["nas", "web"]
+    assert view["outside"] == []  # nothing set up outside Argus yet
+    h = {"X-CSRF-Token": csrf}
+    bad = client.post("/api/companions/uninstall", headers=h,
+                      json={"password": PASSWORD, "again": "x"})
+    assert bad.status_code == 422
+    r = client.post("/api/companions/uninstall", headers=h,
+                    json={"password": PASSWORD, "again": PASSWORD})
+    assert r.json()["asked"] == ["web"]  # a monitoring-only host is its owner's to uninstall
+    assert report(client, a["token"])[0].json()["uninstall"] is True
+
+
+def test_leave_argus_names_what_lives_outside_argus(rt, client, csrf):
+    s = client.app.state.settings
+    s.set("github.app", {"id": 1, "slug": "argus-devin", "name": "Argus (devin)",
+                         "html_url": "https://github.com/apps/argus-devin", "owner": "devin",
+                         "owner_type": "User"})
+    s.set("deploy.repo", "devin/stacks")
+    s.set_secret("deploy.write_token", "github_pat_x")
+    s.set_secret("alerts.telegram.token", "123:abc")
+    keys = {o["key"]: o for o in client.get("/api/leave").json()["outside"]}
+    assert set(keys) == {"github_app", "deploy_repo", "write_token", "telegram"}
+    assert keys["github_app"]["url"] == "https://github.com/settings/apps/argus-devin"
+    assert "dependabot.yml" in keys["deploy_repo"]["how"]

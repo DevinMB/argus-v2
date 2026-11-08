@@ -14,6 +14,7 @@ import Heartbeats from "./components/Heartbeats.jsx";
 import DeploySetup from "./components/DeploySetup.jsx";
 import Hosts from "./components/Hosts.jsx";
 import Duplicates from "./components/Duplicates.jsx";
+import LeavePage from "./components/LeavePage.jsx";
 import WatchMore from "./components/WatchMore.jsx";
 import Jobs from "./components/Jobs.jsx";
 import Meter from "./components/Meter.jsx";
@@ -32,7 +33,7 @@ function useView() {
     const m = window.location.hash.match(/^#\/updates(?:\/(.+))?$/);
     if (m) return ["updates", m[1] && decodeURIComponent(m[1])];
     // #/github may carry GitHub's ?installation_id=... after an install.
-    const page = window.location.hash.match(/^#\/(hosts|alerts|account|github|config|deploy)(?:\?.*)?$/);
+    const page = window.location.hash.match(/^#\/(hosts|alerts|account|github|config|deploy|leave)(?:\?.*)?$/);
     return page ? [page[1], null] : ["checks", null];
   };
   const [view, setView] = useState(read);
@@ -226,6 +227,7 @@ export default function App() {
       )}
       {!locked && settingsView && session?.signed_in && view === "alerts" && <AlertsPage session={session} />}
       {!locked && settingsView && session?.signed_in && view === "github" && <GitHubPage session={session} />}
+      {!locked && session?.signed_in && view === "leave" && <LeavePage session={session} />}
       {!locked && session?.signed_in && view === "deploy" && <DeploySetup session={session} data={data} reload={reload} />}
       {!locked && settingsView && session?.signed_in && view === "config" && <ConfigPage session={session} />}
       {!locked && settingsView && session?.signed_in && view === "account" && (
