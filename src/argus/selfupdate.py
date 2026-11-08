@@ -31,7 +31,7 @@ log = logging.getLogger("argus.selfupdate")
 REPO = os.environ.get("ARGUS_UPDATE_REPO", "DevinMB/argus")
 IMAGE = os.environ.get("ARGUS_IMAGE", "ghcr.io/devinmb/argus")
 STATE = "argus.update"  # the request and, later, its result
-EVERY = 3600
+EVERY = 900  # the Updates page sees a new build within a minute; this should not lag an hour
 GIVE_UP = 30 * 60  # a request with no result by then failed
 
 
