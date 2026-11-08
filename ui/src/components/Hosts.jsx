@@ -327,7 +327,10 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
     e.preventDefault();
     try {
       // The choice shown is the choice saved: "Argus, every week" means on.
-      await send("PUT", `/api/patching/${host.name}`, { ...p, day: Number(p.day), enabled: !p.elsewhere }, session.csrf);
+      const outside = net === "outside" ? (p.outside_backup ?? "").trim() : "";
+      if (net === "outside" && !outside) throw new Error("say where it is backed up");
+      await send("PUT", `/api/patching/${host.name}`, { ...p, day: Number(p.day), enabled: !p.elsewhere,
+        outside_backup: outside, no_backup: net === "none" }, session.csrf);
       onSaved();
     } catch (err) {
       setError(err.message);
@@ -338,6 +341,14 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
   const seen = backups.find((b) => b.ref === suggested);
   const noneSeen = !server && !p.backup && !(seen && seen.at);
   const pick = (w) => setP({ ...p, elsewhere: w === "elsewhere", enabled: w === "argus" });
+  // The safety net: a backup Argus sees, one it cannot (the owner's word), or none needed.
+  const [net, setNet] = useState(() => (host.patching.plan.outside_backup ? "outside"
+    : host.patching.plan.no_backup ? "none" : "backup"));
+  const pickNet = (n) => {
+    setNet(n);
+    setP({ ...p, no_backup: n === "none", outside_backup: n === "outside" ? p.outside_backup : "",
+           backup: n === "backup" ? p.backup : "" });
+  };
   const backupSelect = (
     <select value={p.backup} onChange={(e) => set("backup", e.target.value)} disabled={p.no_backup} aria-label="Its backup">
       <option value="">{p.no_backup ? "None needed" : "Choose its backup…"}</option>
@@ -417,16 +428,29 @@ function PatchForm({ host, session, refs, backups, onSaved, onCancel, reload }) 
             </>
           ) : (
             <>
-              <div className="pf-row">{backupSelect}{days}</div>
-              <label className="pf-check"><input type="checkbox" checked={!!p.no_backup}
-                onChange={(e) => setP({ ...p, no_backup: e.target.checked, backup: e.target.checked ? "" : p.backup })} />
-                It needs no backup: I could rebuild it</label>
-              {noneSeen && !p.no_backup && (
+              <div className="pf-net" role="radiogroup" aria-label="Safety net">
+                <label className="pf-check"><input type="radio" checked={net === "backup"} onChange={() => pickNet("backup")} />
+                  A backup Argus can see</label>
+                {net === "backup" && <div className="pf-row pf-sub">{backupSelect}{days}</div>}
+                <label className="pf-check"><input type="radio" checked={net === "outside"} onChange={() => pickNet("outside")} />
+                  Backed up outside Argus</label>
+                {net === "outside" && (
+                  <div className="pf-sub">
+                    <input className="pf-text" value={p.outside_backup ?? ""} required maxLength={200}
+                           placeholder="Sunday snapshot on another Proxmox, to the NAS"
+                           onChange={(e) => set("outside_backup", e.target.value)} aria-label="Where it is backed up" />
+                    <p className="pf-note">Argus cannot check it, so it takes your word and shows it as such.</p>
+                  </div>
+                )}
+                <label className="pf-check"><input type="radio" checked={net === "none"} onChange={() => pickNet("none")} />
+                  It needs no backup: I could rebuild it</label>
+              </div>
+              {net === "backup" && noneSeen && (
                 <p className="pf-hint">
-                  Argus sees no backup of {host.name}. {seen ? "Add it to a backup job in Proxmox (Datacenter, Backup); it is chosen here after the next run." : "Pick a job or timer that reports when its backup finishes."}
+                  Argus sees no backup of {host.name}. {seen ? "Add it to a backup job in Proxmox (Datacenter, Backup); it is chosen here after the next run." : "Pick a job or timer that reports when its backup finishes, or choose Backed up outside Argus."}
                 </p>
               )}
-              {!p.no_backup && (
+              {net === "backup" && (
                 <details className="about">
                   <summary>Restore test (optional){p.restore ? `: ${p.restore.replace(":", ": ")}` : ""}</summary>
                   <div className="pf-row">
@@ -619,7 +643,8 @@ function HostRow({ host, guest, child, toggle }) {
         <Tags items={[...attention(host), ...backupTag(host, guest)]} /></span>
       <span className="fleet-patch small">
         <span className={`st-${ptone}`}>{ptext}</span>
-        {host.patching?.plan?.no_backup ? <span className="muted">no backup needed</span>
+        {host.patching?.plan?.outside_backup ? <span className="muted">backed up outside Argus</span>
+          : host.patching?.plan?.no_backup ? <span className="muted">no backup needed</span>
           : guest?.backup && backupTone(guest) === "up" && <span className="muted">backup {agoText(Date.now() / 1000 - guest.backup.at)}</span>}
       </span>
       <span className="fleet-seen small muted">{host.last_seen ? agoText(host.age) : "waiting"}</span>

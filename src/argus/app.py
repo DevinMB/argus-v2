@@ -325,6 +325,7 @@ class PatchPlan(BaseModel):
     elsewhere: bool = False
     elsewhere_job: str = Field("", pattern=r"^$|^(job|heartbeat):[a-z0-9][a-z0-9-]{0,62}$")
     no_backup: bool = False  # the owner can rebuild it: patch without a backup
+    outside_backup: str = Field("", max_length=200)  # backed up where Argus cannot see
 
 
 class PveBackup(BaseModel):
@@ -947,7 +948,7 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         if body.backup == "pve:guests" and not (c["report"] or {}).get("proxmox"):
             raise HTTPException(422, f"{host} is not a Proxmox server: there are no guests"
                                      " whose backups could cover it")
-        if body.enabled and not body.backup and not body.no_backup \
+        if body.enabled and not body.backup and not body.no_backup and not body.outside_backup \
                 and not (c["report"] or {}).get("snapshot"):
             raise HTTPException(422, "link a backup first: Argus only patches a host it can "
                                      "bring back (or say it needs no backup, or choose "

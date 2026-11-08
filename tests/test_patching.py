@@ -328,3 +328,15 @@ def test_a_guests_own_backup_counts_before_anything_is_linked(env):
     assert views["argus"]["safety"]["ok"] is True
     assert views["argus"]["safety"]["backup"] == "pve:pve1/100"
     assert c.post("/api/patching/argus/now", headers=csrf).status_code == 200
+
+
+def test_a_backup_argus_cannot_see_is_the_owners_word_shown_as_such(env):
+    # slayerz-lab: snapshotted on Sundays by a Proxmox Argus must not touch.
+    c, csrf, rt, clock = env
+    tok = enroll(c, csrf, "slayerz-lab")
+    plan = {**PLAN, "outside_backup": "Sunday snapshot on Chris's Proxmox, to the UNAS"}
+    r = c.put("/api/patching/slayerz-lab", headers=csrf, json=plan)
+    assert r.status_code == 200
+    assert r.json()["safety"]["net"] == (
+        "a backup outside Argus (your word): Sunday snapshot on Chris's Proxmox, to the UNAS")
+    assert report(c, tok, local=TUE_0305)["patch"]["run"]

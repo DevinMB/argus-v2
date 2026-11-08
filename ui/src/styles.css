@@ -912,3 +912,8 @@ button.ctable-row:hover { background: var(--raise); }
   border-radius: 8px; background: var(--panel); }
 .reinstall p { margin: 0; }
 .reinstall details .snippet { margin: 8px 0; }
+.pf-net { display: grid; gap: 6px; }
+.pf-sub { padding-left: 24px; display: grid; gap: 6px; }
+.pf-sub.pf-row { display: flex; }
+.pf-text { background: var(--bg); border: 1px solid var(--line-strong); border-radius: 6px; padding: 7px 10px;
+  color: var(--text); font: 13px var(--sans); width: min(100%, 460px); }
