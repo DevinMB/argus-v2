@@ -107,10 +107,16 @@ func (d *Deployer) save(s *deployState) error {
 // Results are what the next report carries: the newest attempt per wanted stack.
 func (d *Deployer) Results(plan *DeployPlan) []DeployResult {
 	out := []DeployResult{}
+	s := d.load()
 	if plan == nil {
+		// Just started (a self-update restarts every companion at once): no plan
+		// yet, so say what is on disk, or Argus shows every app as deploying again.
+		for _, r := range s.Results {
+			out = append(out, r)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 		return out
 	}
-	s := d.load()
 	for _, st := range plan.Stacks {
 		if r, ok := s.Results[st.Path]; ok {
 			out = append(out, r)
