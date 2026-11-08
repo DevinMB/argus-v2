@@ -1468,8 +1468,10 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
                 placed = [{**p, "status": {h: status.get((h, p["path"]), "pending")
                                            for h in p["hosts"]}}
                           for p in d.placements(t.owner, t.repo.name)] or None
-            c = checks.get(t.repo.check)
-            out.append({**state, "track": github.track(
+            # argus.yml's check:, else the one named after the repo.
+            linked = t.repo.check or github.check_for(t.repo.name, r.config.checks)
+            c = checks.get(linked)
+            out.append({**state, "check": linked or None, "track": github.track(
                 state, c and check_view(r, c), beats, r.clock(),
                 s.get("deploy.repo") or stacks, t.repo.deploy, placed,
                 can_bump=s.has_secret(WRITE_TOKEN))})
