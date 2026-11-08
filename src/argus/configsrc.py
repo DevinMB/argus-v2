@@ -284,7 +284,9 @@ def import_preview(text: str, current: str) -> list[dict]:
         raise EditError("no checks: list in that text")
     here = validate(current) if current.strip() else cfg.Config()
     names = {c.name for c in here.checks}
-    targets = {(c.kind, c.target.rstrip("/")) for c in here.checks}
+    # Covered: the same port is watched already, by any kind or path.
+    watched = {e: c.name for c in here.checks if (e := cfg.endpoint(c))}
+    targets = {(c.kind, c.target.rstrip("/")): c.name for c in here.checks}
     out = []
     for e in raw:
         if not isinstance(e, dict):
@@ -298,9 +300,10 @@ def import_preview(text: str, current: str) -> list[dict]:
             out.append({"name": str(entry.get("name", "?")), "state": "invalid",
                         "why": str(err).splitlines()[0][:200], "entry": None})
             continue
-        state = ("exists" if c.name in names else
-                 "covered" if (c.kind, c.target.rstrip("/")) in targets else "new")
+        by = targets.get((c.kind, c.target.rstrip("/"))) or watched.get(cfg.endpoint(c))
+        state = "exists" if c.name in names else "covered" if by else "new"
         out.append({"name": c.name, "state": state, "kind": c.kind, "target": c.target,
+                    **({"covered_by": by} if state == "covered" else {}),
                     "group": c.group, "severity": c.severity,
                     "entry": c.model_dump(mode="json", exclude_defaults=True)})
     return out

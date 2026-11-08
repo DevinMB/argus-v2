@@ -254,3 +254,20 @@ def load(path: Path) -> tuple[Config, str]:
     """Parse and validate. Returns the config and a short hash of the file."""
     text = path.read_text()
     return parse(text), hashlib.sha256(text.encode()).hexdigest()[:12]
+
+
+def endpoint(check: Check) -> tuple[str, int] | None:
+    """The (host, port) a check knocks on, whatever its kind or path, so two
+    checks of one port are seen as one (an HTTP /_up and a TCP check of :5984).
+    A check run from inside a host is keyed by that host. None for ping."""
+    if check.kind == "tcp":
+        host, _, port = check.target.rpartition(":")
+        key = (host.strip("[]"), int(port))
+    elif check.kind == "http":
+        u = urlsplit(check.target)
+        key = (u.hostname or "", u.port or (443 if u.scheme == "https" else 80))
+    else:
+        return None
+    if check.companion and key[0] in ("127.0.0.1", "localhost", "::1"):
+        return (f"companion:{check.companion}", key[1])
+    return key

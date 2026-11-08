@@ -1,4 +1,4 @@
-import { ago, agoText, isPublic, siteName } from "../lib.js";
+import { ago, agoText, isPublic, placeOf, siteName } from "../lib.js";
 
 const LABEL = { up: "up", failing: "failing", down: "down", unknown: "waiting", paused: "paused" };
 const RANK = { down: 0, failing: 1, unknown: 2, paused: 3, up: 4 };
@@ -31,13 +31,18 @@ function Row({ c, now, many, sites, onPick }) {
   );
 }
 
-export default function CheckGrid({ checks, now, sites, groupNames, onPick }) {
+// By host: public names first, then each host, then devices with no companion.
+const PLACE = (g) => (g === "Websites" ? 0 : g === "Other devices" ? 2 : 1);
+
+export default function CheckGrid({ checks, now, sites, groupNames, onPick, groupBy = "group", hosts = [] }) {
   if (!checks.length) return <p className="empty">No checks match.</p>;
   const many = Object.keys(sites ?? {}).length > 1;
   const groups = {};
-  for (const c of checks) (groups[c.group] ??= []).push(c);
+  const keyOf = (c) => (groupBy === "host" ? placeOf(c, hosts) : c.group);
+  for (const c of checks) (groups[keyOf(c)] ??= []).push(c);
   const worst = (list) => Math.min(...list.map((c) => RANK[c.status] ?? 2));
-  const order = Object.keys(groups).sort((a, b) => (worst(groups[a]) - worst(groups[b])) || a.localeCompare(b));
+  const order = Object.keys(groups).sort((a, b) => (worst(groups[a]) - worst(groups[b]))
+    || (groupBy === "host" ? PLACE(a) - PLACE(b) : 0) || a.localeCompare(b));
   return (
     <div className="ctable" role="table">
       <div className="ctable-row ctable-head" role="row">
@@ -50,7 +55,7 @@ export default function CheckGrid({ checks, now, sites, groupNames, onPick }) {
         return (
           <div key={g} role="rowgroup" className="ctable-group">
             <div className="ctable-ghead" role="row">
-              <span className="ct-gname">{groupNames?.[g] ?? g}</span>
+              <span className="ct-gname">{groupBy === "host" ? g : (groupNames?.[g] ?? g)}</span>
               <span className={`small ${bad ? "st-failing" : "muted"}`}>
                 {bad ? `${bad} of ${list.length} need a look` : `${list.length} up`}</span>
             </div>
