@@ -51,11 +51,13 @@ type Patcher struct {
 	run       func(timeout time.Duration, env []string, name string, args ...string) (string, error)
 	reboot    func() error
 	settle    time.Duration // how long containers get to come back
+	pkgBusy   func() bool   // a package manager is at work on the host
+	pkgWait   time.Duration // how often to look again while one is
 }
 
 func newPatcher(stateDir string, c *Collector) *Patcher {
 	return &Patcher{StateDir: stateDir, collector: c, run: runOutside, settle: 5 * time.Minute,
-		reboot: rebootHost}
+		reboot: rebootHost, pkgBusy: func() bool { return pkgBusyProc("/proc") }, pkgWait: 10 * time.Second}
 }
 
 // runOutside runs a command outside the service's read-only sandbox: in a
@@ -242,6 +244,10 @@ func (p *Patcher) Start(g *PatchGrant) {
 // AfterBoot finishes a run that rebooted: the same containers must be back.
 func (p *Patcher) AfterBoot() {
 	s := p.State()
+	if s != nil && s.State == "running" {
+		p.finishInterrupted(s)
+		return
+	}
 	if s == nil || s.State != "rebooting" {
 		return
 	}
@@ -251,6 +257,45 @@ func (p *Patcher) AfterBoot() {
 		s.State, s.Summary = "ok", s.Summary+"; rebooted, everything came back"
 	}
 	p.save(s)
+}
+
+// finishInterrupted settles a run this program was in the middle of when it
+// stopped (an upgrade can restart it): a just-started companion runs nothing,
+// but the package manager it started outside its sandbox may still be at work.
+// Once no package manager is left, what is still pending says how it went.
+func (p *Patcher) finishInterrupted(s *PatchState) {
+	for i := 0; i < 360 && p.pkgBusy(); i++ { // up to an hour at the usual pace
+		time.Sleep(p.pkgWait)
+	}
+	u := p.collector.pendingUpdates()
+	p.collector.SetUpdates(u)
+	note := "the companion restarted during the run"
+	switch {
+	case u == nil || u.Error != "" || u.Pending == nil:
+		s.State, s.Summary = "failed", note+"; what is still pending could not be read"
+	case *u.Pending == 0:
+		s.State, s.Summary = "ok", "all updates installed; "+note
+	default:
+		s.State, s.Summary = "failed", fmt.Sprintf("%s; %d update(s) still pending", note, *u.Pending)
+	}
+	if r := p.collector.rebootRequired(); r != nil && *r {
+		s.Summary += "; it needs a reboot, left for its next window"
+	}
+	p.save(s)
+}
+
+// pkgBusyProc: whether a package manager is running, from /proc.
+func pkgBusyProc(proc string) bool {
+	names := map[string]bool{"apt": true, "apt-get": true, "dpkg": true, "dnf": true,
+		"yum": true, "unattended-upgr": true, "apk": true}
+	entries, _ := os.ReadDir(proc)
+	for _, e := range entries {
+		if b, err := os.ReadFile(filepath.Join(proc, e.Name(), "comm")); err == nil &&
+			names[strings.TrimSpace(string(b))] {
+			return true
+		}
+	}
+	return false
 }
 
 // updateSteps are the commands for one run, by package manager and level.

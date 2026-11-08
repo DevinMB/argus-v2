@@ -73,6 +73,18 @@ def test_hiding_the_list_is_an_admin_write(client):
     assert c.put("/api/start", json={"hidden": True}, headers=csrf).json()["hidden"]
 
 
+def test_a_step_once_done_stays_done(tmp_path):
+    from types import SimpleNamespace
+
+    from argus import start
+    rt = SimpleNamespace(config=SimpleNamespace(checks=[]))
+    alerts = {"sender": "argus", "tested": False}
+    v = start.view(rt=rt, alerts=alerts, gh_connected=False, deploy_views=[], companions=[],
+                   hidden=False, seen={"deploys"})
+    steps = {s["key"]: s["done"] for s in v["steps"]}
+    assert steps["deploys"] is True and steps["github"] is False
+
+
 def test_a_port_published_on_loopback_only_is_watched_from_the_host():
     from argus.start import suggestions
     hosts = [{"name": "lab", "address": "192.168.10.47", "status": "ok", "report": {"containers": [
