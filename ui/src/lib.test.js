@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle, httpText, endpoint, duplicates, placeOf, machineOf } from "./lib.js";
+import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle, httpText, endpoint, duplicates, placeOf, machineOf, advisoryUrl } from "./lib.js";
 
 const c = (name, status, extra = {}) => ({
   name, status, site: "B", group: "apps", target: `http://${name}/`, ...extra,
@@ -417,5 +417,16 @@ describe("machineOf", () => {
       { name: "slayerz-lab", report: {} },
     ];
     expect(machineOf(hosts)).toEqual({ "butts-lab": "butts-lab", "mars-b": "butts-lab", "slayerz-lab": "slayerz-lab" });
+  });
+});
+
+describe("advisoryUrl", () => {
+  it("links each advisory and CVE to its distro's own page", () => {
+    expect(advisoryUrl("RLSA-2026:1234", "Rocky Linux 9.8")).toBe("https://errata.rockylinux.org/RLSA-2026:1234");
+    expect(advisoryUrl("DSA-6012-1", "Debian GNU/Linux 13")).toBe("https://security-tracker.debian.org/tracker/DSA-6012-1");
+    expect(advisoryUrl("CVE-2026-1001", "Debian GNU/Linux 13")).toBe("https://security-tracker.debian.org/tracker/CVE-2026-1001");
+    expect(advisoryUrl("CVE-2026-1001", "Ubuntu 24.04.5 LTS")).toBe("https://ubuntu.com/security/CVE-2026-1001");
+    expect(advisoryUrl("USN-7000-1", "Ubuntu 24.04.5 LTS")).toBe("https://ubuntu.com/security/notices/USN-7000-1");
+    expect(advisoryUrl("whatever", "x")).toBe(null);
   });
 });

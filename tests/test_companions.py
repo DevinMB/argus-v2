@@ -408,6 +408,15 @@ def test_a_monitoring_only_host_is_uninstalled_by_its_owner_not_argus(client, cs
     assert r.status_code == 409 and "argus-companion uninstall" in r.json()["detail"]
 
 
+def test_pending_packages_and_why_reach_the_host_page(client, csrf):
+    me = enroll(client, new_code(client, csrf)["code"]).json()
+    pkg = {"name": "libssl3t64", "from": "3.5.1-1", "to": "3.5.1-1+deb13u1", "security": True,
+           "source": "openssl", "advisories": ["DSA-6012-1"], "cves": ["CVE-2026-1001"]}
+    r, _ = report(client, me["token"], updates={"pending": 1, "security": 1, "manager": "apt",
+                                               "packages": [pkg]})
+    assert r.status_code == 200, r.text
+    got = client.get("/api/companions").json()["companions"][0]["report"]["updates"]["packages"]
+    assert got[0]["from"] == "3.5.1-1" and got[0]["cves"] == ["CVE-2026-1001"]
 def test_leave_argus_lists_the_hosts_and_asks_each_with_the_password_twice(client, csrf):
     from test_auth import PASSWORD
     a = enroll(client, new_code(client, csrf)["code"], "web").json()
