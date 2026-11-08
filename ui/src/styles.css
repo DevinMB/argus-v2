@@ -966,3 +966,9 @@ button.ctable-row:hover { background: var(--raise); }
 .uninstall ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .uninstall-state { border-color: var(--line-strong); width: 100%; }
 .uninstall-state p { margin: 0 0 8px; }
+
+.pkgs .why { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 2px; font-size: 12px; }
+.pkgs .why a { color: var(--accent); text-decoration: none; }
+.pkgs .why a:hover { text-decoration: underline; }
+.pkgs li { grid-template-columns: minmax(0, 1fr) auto; }
+.pkgs li > .row-act { display: none; }

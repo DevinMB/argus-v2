@@ -73,8 +73,9 @@ type Disk struct {
 }
 
 type Updates struct {
-	Pending   *int    `json:"pending"`
-	Security  *int    `json:"security"`
+	Pending   *int      `json:"pending"`
+	Security  *int      `json:"security"`
+	Packages  []Package `json:"packages,omitempty"`
 	Manager   string  `json:"manager"`
 	CheckedAt float64 `json:"checked_at"`
 	Error     string  `json:"error,omitempty"`
@@ -95,6 +96,7 @@ type Collector struct {
 	updatesNext time.Time
 	pveMu       sync.Mutex
 	updMu       sync.Mutex // updates and updatesNext: a patch run asks for a recount
+	changelogs  *Changelogs
 	pve         *Proxmox
 	pveNext     time.Time
 	pveSince    time.Time // when the read in flight started; zero when none is
@@ -111,12 +113,17 @@ func newCollector() *Collector {
 		Proxmox:      defaultProxmoxPaths,
 		run:          runCommand,
 		dnfFresh:     dnfFresh,
+		changelogs:   newChangelogs(),
 	}
 }
 
 // runCommand returns stdout and the exit code; err only when it could not run.
 func runCommand(name string, args ...string) (string, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	return runCommandFor(2*time.Minute, name, args...)
+}
+
+func runCommandFor(timeout time.Duration, name string, args ...string) (string, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
@@ -377,6 +384,18 @@ func (c *Collector) pendingUpdates() *Updates {
 		}
 		n, sec := parseAptSim(out)
 		u.Pending, u.Security = &n, &sec
+		u.Packages = parseAptPackages(out)
+		if c.changelogs != nil {
+			todo := c.changelogs.fill(c, u.Packages)
+			c.changelogs.learn(c, todo, func() {
+				// Downloaded in the background: put what was learned on the newest count.
+				c.updMu.Lock()
+				if c.updates != nil {
+					c.changelogs.fill(c, c.updates.Packages)
+				}
+				c.updMu.Unlock()
+			})
+		}
 	case has("dnf"):
 		u.Manager = "dnf"
 		// The service's filesystem is read-only outside its own folder, and dnf
@@ -397,10 +416,13 @@ func (c *Collector) pendingUpdates() *Updates {
 		}
 		n := parseDnfCheckUpdate(out)
 		u.Pending = &n
+		pkgs := c.rpmInstalled(parseDnfPackages(out))
 		if out, code, err := c.run("dnf", "-q", "-C", logdir, "updateinfo", "list", "--security"); err == nil && code == 0 {
 			sec := len(nonEmptyLines(out))
 			u.Security = &sec
+			pkgs = withAdvisories(pkgs, parseDnfAdvisories(out))
 		}
+		u.Packages = sortPackages(pkgs)
 	case has("apk"):
 		u.Manager = "apk"
 		out, code, err := c.run("apk", "list", "-u")
@@ -410,6 +432,7 @@ func (c *Collector) pendingUpdates() *Updates {
 		}
 		n := len(nonEmptyLines(out))
 		u.Pending = &n
+		u.Packages = parseApkPackages(out)
 	default:
 		return nil
 	}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { send } from "../api.js";
 import Adopt from "./Adopt.jsx";
-import { agoText, attention, backupLabel, bytes, containerTrouble, diskTone, guestHostName, hostSentence, hostSub, hostTree, guestsNet, installHelp, patchLabel, sortContainers } from "../lib.js";
+import { advisoryUrl, agoText, attention, backupLabel, bytes, containerTrouble, diskTone, guestHostName, hostSentence, hostSub, hostTree, guestsNet, installHelp, patchLabel, sortContainers } from "../lib.js";
 
 const STATUS = { ok: ["up", "reporting"], quiet: ["down", "gone quiet"], waiting: ["unknown", "waiting"] };
 const FIRST_CONTAINERS = 8;
@@ -1148,6 +1148,43 @@ function FailedUnits({ host, session, reload }) {
   );
 }
 
+// Each pending update and, for a security one, why: its advisories and CVEs,
+// linked to the distro's own pages (design: the distro's sources only).
+function PackageList({ packages, os, pending }) {
+  const [all, setAll] = useState(false);
+  const sec = packages.filter((p) => p.security);
+  const shown = all ? packages : sec.length ? sec : packages.slice(0, 8);
+  const more = packages.length - shown.length;
+  return (
+    <>
+      <ul className="rows pkgs">{shown.map((p) => (
+        <li key={p.name}>
+          <span className="row-main"><span className="mono">{p.name}</span>
+            {p.source && <span className="muted small"> from {p.source}</span>}
+            <span className="row-sub muted mono">{p.from ? `${p.from} → ${p.to}` : `new: ${p.to}`}</span>
+            {(p.advisories?.length > 0 || p.cves?.length > 0) && (
+              <span className="row-sub why">{[...(p.advisories ?? []), ...(p.cves ?? [])].map((id) => {
+                const url = advisoryUrl(id, os);
+                return url ? <a key={id} className="mono" href={url} target="_blank" rel="noreferrer">{id}</a>
+                  : <span key={id} className="mono">{id}</span>;
+              })}</span>
+            )}
+            {p.security && !p.advisories?.length && !p.cves?.length && (
+              <span className="row-sub muted small">security update; its advisory shows here within the hour</span>
+            )}</span>
+          <span className="row-note small">{p.security ? <span className={`tag tag-${p.severity === "Critical" || p.severity === "Important" ? "down" : "failing"}`}>
+            {p.severity ? `${p.severity.toLowerCase()} security` : "security"}</span> : null}</span>
+          <span className="row-act" />
+        </li>
+      ))}</ul>
+      {(more > 0 || all) && (
+        <button className="link-button small" onClick={() => setAll(!all)}>
+          {all ? "Show only security updates" : `Show all ${pending ?? packages.length} updates`}</button>
+      )}
+    </>
+  );
+}
+
 function Overview({ host, suggestions, session, reload, updateCommand, hosts }) {
   const r = host.report ?? {};
   const look = attention(host);
@@ -1181,6 +1218,7 @@ function Overview({ host, suggestions, session, reload, updateCommand, hosts }) 
               : `Up to date (${r.updates.manager}).`)}
             {r.reboot_required && <span className="st-failing"> Needs a reboot.</span>}
           </p>
+          {r.updates?.packages?.length > 0 && <PackageList packages={r.updates.packages} os={r.os} pending={r.updates.pending} />}
         </Section>
       )}
       {r.failed_units?.length > 0 && <FailedUnits host={host} session={session} reload={reload} />}

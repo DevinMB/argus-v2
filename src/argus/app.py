@@ -260,9 +260,24 @@ class Disk(BaseModel):
     used: int = Field(ge=0)
 
 
+class Package(BaseModel):
+    """One pending update, and for a security one why, from the distro's sources."""
+    name: str = Field(max_length=200)
+    to: str = Field(max_length=200)
+    from_: str = Field("", max_length=200, alias="from")
+    security: bool = False
+    source: str = Field("", max_length=200)
+    advisories: list[str] = Field([], max_length=20)
+    cves: list[str] = Field([], max_length=50)
+    severity: str = Field("", max_length=20)
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+
 class Updates(BaseModel):
     pending: int | None = Field(None, ge=0)
     security: int | None = Field(None, ge=0)
+    packages: list[Package] = Field([], max_length=300)
     manager: str = Field("", max_length=20)
     checked_at: float | None = None
     error: str = Field("", max_length=300)

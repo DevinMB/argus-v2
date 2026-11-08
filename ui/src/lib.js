@@ -644,3 +644,17 @@ export function machineOf(hosts = []) {
   }
   return out;
 }
+
+// A security advisory or CVE on its distro's own page.
+export function advisoryUrl(id, os = "") {
+  const ubuntu = /ubuntu/i.test(os);
+  if (/^RLSA-/.test(id)) return `https://errata.rockylinux.org/${id}`;
+  if (/^USN-/.test(id)) return `https://ubuntu.com/security/notices/${id}`;
+  if (/^(DSA|DLA)-/.test(id)) return `https://security-tracker.debian.org/tracker/${id}`;
+  if (/^CVE-/.test(id)) {
+    if (ubuntu) return `https://ubuntu.com/security/${id}`;
+    if (/debian/i.test(os)) return `https://security-tracker.debian.org/tracker/${id}`;
+    return `https://www.cve.org/CVERecord?id=${id}`;
+  }
+  return null;
+}
