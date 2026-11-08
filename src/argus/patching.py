@@ -44,7 +44,10 @@ DEFAULTS = {"enabled": False, "day": 1, "time": "03:00", "level": "full", "reboo
             "elsewhere": False, "elsewhere_job": "",
             # The owner's call: this host can be rebuilt, so it is patched without a
             # backup (decision 12: the owner says what counts as a safety net).
-            "no_backup": False}
+            "no_backup": False,
+            # Backed up by something Argus cannot see (another person's hypervisor):
+            # the owner's word, in their own words, shown as such.
+            "outside_backup": ""}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS patch_runs (
@@ -174,6 +177,11 @@ class Patching:
         """The host's safety net and what it allows."""
         p = self.plan(host)
         snapshot = (report or {}).get("snapshot") or ""
+        if p["outside_backup"]:
+            return {"net": f"a backup outside Argus (your word): {p['outside_backup']}",
+                    "ok": True, "snapshot": "", "backup": "", "backup_age": None,
+                    "fresh": False, "backup_days": p["backup_days"], "outside": True,
+                    "restore": "", "tested_age": None, "tested": False}
         if p["no_backup"]:
             return {"net": "none, by your choice: it can be rebuilt", "ok": True,
                     "snapshot": "", "backup": "", "backup_age": None, "fresh": False,
