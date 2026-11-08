@@ -203,6 +203,12 @@ export default function Account({ session, onSession }) {
       {msg && <p className="form-ok" role="status">{msg}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
 
+      <div className="panel">
+        <h2 className="eyebrow">Leave Argus</h2>
+        <p className="muted">Take your stacks with you, remove Argus from every host, and keep a way back with an export.</p>
+        <div className="actions"><a className="btn btn-quiet-danger" href="#/leave">Leave Argus</a></div>
+      </div>
+
       <div className="actions">
         <button className="btn" onClick={() => run(() => send("POST", "/api/logout", {}, session.csrf))}>
           Sign out

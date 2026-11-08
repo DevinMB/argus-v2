@@ -36,7 +36,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from argus import backup, configsrc, ghauth, github, start
+from argus import backup, configsrc, ghauth, github, leave, start
 from argus.adopt import Adoption
 from argus.alerts import (
     ALERTMANAGER_EXAMPLE,
@@ -1266,6 +1266,31 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             raise HTTPException(409, "a monitoring-only host is not Argus's to change: "
                                      "run sudo argus-companion uninstall on it, then Remove")
         return request.app.state.uninstalls.request(cid, row["name"])
+
+    @app.post("/api/companions/uninstall")
+    async def uninstall_all(body: Confirm, request: Request, _: Admin) -> dict:
+        """Leave Argus: uninstall every host Argus may change, the password twice.
+        Monitoring-only hosts are listed with the command for their owner."""
+        if body.password != body.again:
+            raise HTTPException(422, "the two passwords are not the same")
+        auth_call(request.app.state.auth.confirm, body.password, address(request))
+        un, asked = request.app.state.uninstalls, []
+        for v in rt(request).companions.views():
+            if not v["read_only"] and not un.to_send(v["id"]):
+                un.request(v["id"], v["name"])
+                asked.append(v["name"])
+        return {"asked": asked}
+
+    @app.get("/api/leave")
+    async def leave_view(request: Request, _: Admin) -> dict:
+        views = rt(request).companions.views()
+        home = request.app.state.selfupdate.host_of(views)
+        return {"hosts": [{"id": v["id"], "name": v["name"], "read_only": v["read_only"],
+                           "uninstall": request.app.state.uninstalls.view(v["id"])}
+                          for v in views],
+                "uninstalled": request.app.state.uninstalls.done(),
+                "outside": leave.outside(request.app.state.settings),
+                "argus_host": home[0]["name"] if home else None}
 
     @app.delete("/api/companions/{cid}/uninstall")
     async def cancel_uninstall(cid: str, request: Request, _: Admin) -> dict:
