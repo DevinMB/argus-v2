@@ -151,6 +151,7 @@ describe("life cycle", () => {
   });
   it("follows a merged change through build and deploy", () => {
     expect(lifecycle(repo({ track: swap("built", "running") }))).toMatchObject({ column: "building", label: "Building" });
+    expect(lifecycle(repo({ track: swap("built", "running") })).sentence).toBe("Building: Bump httpx");
     expect(lifecycle(repo({ track: swap("deployed", "running") }))).toMatchObject({ column: "deploying", you: false });
     expect(lifecycle(repo({ track: swap("built", "failed", "Failed at Tests") })))
       .toMatchObject({ column: "building", tone: "down", sentence: "Failed at Tests", you: true });

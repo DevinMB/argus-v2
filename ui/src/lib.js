@@ -226,7 +226,10 @@ export function lifecycle(repo) {
       deployed: ["deploying", "Deploying"],
       healthy: ["live", "Checking health"],
     }[moving.key] ?? ["live", moving.title];
-    return out(column, "accent", label, moving.detail, moving.url);
+    // "Building 81a4f0c" says little: name the change being built.
+    const detail = moving.key === "built" && repo.main?.title
+      ? `Building: ${tidyTitle(repo.main.title)}` : moving.detail;
+    return out(column, "accent", label, detail, moving.url);
   }
   if (testing.length) {
     return out("testing", "accent", "Testing update",
