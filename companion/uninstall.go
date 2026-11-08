@@ -13,7 +13,9 @@ import (
 //  1. handBack: every stack Argus created (in /var/lib/argus-companion/stacks)
 //     moves to /opt/stacks/<name>, compose file and .env together, so it stays
 //     a plain Compose folder its owner can run. Running containers are left
-//     alone. Stacks Argus took over already live in their own folders.
+//     alone. Stacks Argus took over already live in their own folders. A small
+//     .argus-handed-back file in each moved folder lets a reinstalled companion
+//     deploy the stack there again (Deployer.home), not into a second copy.
 //  2. removal: the service, the binary, /etc/argus-companion and the state
 //     folder. The service stops last: stopping it may end this very script.
 //
@@ -41,7 +43,11 @@ for d in "$src"/*; do
     left=1
     continue
   fi
-  if mv "$d" "$R/opt/stacks/$to"; then echo "handed back $n: /opt/stacks/$to"; else echo "could not move $n"; left=1; fi
+  if mv "$d" "$R/opt/stacks/$to"; then
+    # So a reinstalled companion deploys here, not into a second copy.
+    echo "$n" > "$R/opt/stacks/$to/.argus-handed-back"
+    echo "handed back $n: /opt/stacks/$to"
+  else echo "could not move $n"; left=1; fi
 done
 if [ "$left" = 1 ]; then
   echo "so the companion stays: move or rename the folders named above, then uninstall again"

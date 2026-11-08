@@ -60,6 +60,7 @@ type Deployer struct {
 	StateDir     string
 	DockerSocket string
 	StacksDir    string
+	HandedBack   string // where an uninstall hands stacks back: /opt/stacks
 	PolicyPath   string
 	Policy       *Policy
 	PolicyErr    error
@@ -74,11 +75,14 @@ type deployState struct {
 	// The policy a stack was refused under (its file's sha256): a changed policy
 	// is worth another try, an unchanged one is not.
 	RefusedUnder map[string]string `json:"refused_under,omitempty"`
+	// Stacks deployed in the folder an earlier uninstall handed them back to:
+	// stack name -> folder. Argus does not know these; the companion keeps them.
+	Homes map[string]string `json:"homes,omitempty"`
 }
 
 func newDeployer(stateDir string, policyPath string) *Deployer {
 	return &Deployer{StateDir: stateDir, StacksDir: filepath.Join(stateDir, "stacks"),
-		PolicyPath: policyPath, DockerSocket: "/var/run/docker.sock", compose: runCompose, now: time.Now}
+		HandedBack: "/opt/stacks", PolicyPath: policyPath, DockerSocket: "/var/run/docker.sock", compose: runCompose, now: time.Now}
 }
 
 func (d *Deployer) load() *deployState {
@@ -202,6 +206,10 @@ func (d *Deployer) one(s *deployState, st StackSpec, pull *PullCred) DeployResul
 		files[name] = b
 	}
 	dir := filepath.Join(d.StacksDir, st.Name)
+	home, found := d.home(s, st.Name)
+	if st.Dir == "" && home != "" {
+		dir = home
+	}
 	if st.Dir != "" {
 		if err := d.inPlace(st.Dir); err != nil {
 			return res("refused", err.Error())
@@ -212,7 +220,10 @@ func (d *Deployer) one(s *deployState, st StackSpec, pull *PullCred) DeployResul
 	// second copy and leave data beside the old one. It must be linked in Argus.
 	if cs, err := dockerContainers(d.DockerSocket); err == nil {
 		for _, c := range cs {
-			if c.Project == st.Name && c.WorkingDir != "" && filepath.Clean(c.WorkingDir) != dir {
+			wd := filepath.Clean(c.WorkingDir)
+			// Its own old folder is fine: an uninstall moved it to dir.
+			mine := home != "" && wd == filepath.Join(d.StacksDir, st.Name)
+			if c.Project == st.Name && c.WorkingDir != "" && wd != dir && !mine {
 				return res("refused", fmt.Sprintf("%s already runs from %s; link it on the host's card in Argus, so it keeps that folder",
 					st.Name, c.WorkingDir))
 			}
@@ -240,6 +251,15 @@ func (d *Deployer) one(s *deployState, st StackSpec, pull *PullCred) DeployResul
 	backup := filepath.Join(d.StateDir, "backup", st.Name)
 	_ = os.RemoveAll(backup)
 	old := s.Managed[st.Name]
+	if found {
+		// The files the handed-back folder already runs: the ones to roll back to.
+		for name := range files {
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				old = append(old, name)
+			}
+		}
+		sort.Strings(old)
+	}
 	hadDeploy := len(old) > 0
 	for _, name := range append(slices.Clone(old), ".env") {
 		if b, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
@@ -268,8 +288,17 @@ func (d *Deployer) one(s *deployState, st StackSpec, pull *PullCred) DeployResul
 	s.Managed[st.Name] = managed
 
 	// 3. Pull with the one-time credential, then start and wait for healthy.
+	if found {
+		if s.Homes == nil {
+			s.Homes = map[string]string{}
+		}
+		s.Homes[st.Name] = dir
+	}
 	err = d.upAndWait(dir, st.Name, pull, &out)
 	if err == nil {
+		if found {
+			return res("ok", "deployed in "+dir+", where the uninstall left it")
+		}
 		return res("ok", "")
 	}
 	why := out
@@ -298,6 +327,47 @@ func (d *Deployer) one(s *deployState, st StackSpec, pull *PullCred) DeployResul
 		return res("failed", why+"\nrolling back failed too: "+back)
 	}
 	return res("rolled_back", why)
+}
+
+// handedBackMark is the file an uninstall leaves in each stack folder it hands
+// back, holding the stack's name (see handBackScript). It stays while Argus
+// deploys there, so a second uninstall and reinstall finds the folder again.
+const handedBackMark = ".argus-handed-back"
+
+// home is the folder a stack Argus creates lives in when it is not the usual
+// one: remembered from an earlier deploy, or, when this companion has never
+// deployed it, a folder an uninstall handed it back to. found is true for the
+// second, the first deploy there.
+func (d *Deployer) home(s *deployState, name string) (dir string, found bool) {
+	if h := s.Homes[name]; h != "" {
+		return h, false
+	}
+	if d.HandedBack == "" || len(s.Managed[name]) > 0 {
+		return "", false
+	}
+	if _, err := os.Stat(filepath.Join(d.StacksDir, name)); err == nil {
+		return "", false
+	}
+	for _, cand := range []string{name, name + "-argus"} {
+		dir := filepath.Join(d.HandedBack, cand)
+		b, err := readPlain(filepath.Join(dir, handedBackMark))
+		if err != nil || strings.TrimSpace(string(b)) != name || !d.allowed(dir) {
+			continue
+		}
+		return dir, true
+	}
+	return "", false
+}
+
+// allowed: dir is inside a folder this host's policy lets stacks live in.
+func (d *Deployer) allowed(dir string) bool {
+	if d.Policy == nil {
+		return false
+	}
+	return slices.ContainsFunc(d.Policy.BindRoots, func(root string) bool {
+		root = filepath.Clean(root)
+		return dir == root || strings.HasPrefix(dir, root+"/")
+	})
 }
 
 func (d *Deployer) upAndWait(dir, name string, pull *PullCred, out *string) error {

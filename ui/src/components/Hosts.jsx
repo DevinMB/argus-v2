@@ -255,6 +255,9 @@ function Stacks({ stacks, session, reload }) {
               <span className="host-wide small muted">Runs from <code>{st.held}</code>, outside Argus. Link it below
                 to deploy it from git where it is.</span>
             )}
+            {st.detail && st.status === "deployed" && (
+              <span className="host-wide small muted">{st.detail.charAt(0).toUpperCase() + st.detail.slice(1)}.</span>
+            )}
             {st.detail && st.status !== "deployed" && st.status !== "link" && <pre className="host-wide log small">{st.detail}</pre>}
             {session?.signed_in && (
               <button className="link-button small host-wide secrets-toggle" onClick={() => setOpen(open === st.path ? null : st.path)}>
