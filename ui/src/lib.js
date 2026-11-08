@@ -581,3 +581,52 @@ export function failedUnits(host) {
   const ignored = host.ignored ?? [];
   return (host.report?.failed_units ?? []).filter((u) => !ignored.includes(`unit:${u}`));
 }
+
+// ---- where a check runs, and checks of one port ----
+
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
+const isIP = (h) => /^[0-9.]+$/.test(h) || h.includes(":");
+
+// The host and port a check knocks on (as the server's config.endpoint).
+export function endpoint(c) {
+  let host, port;
+  if (c.kind === "tcp") {
+    const i = c.target.lastIndexOf(":");
+    host = c.target.slice(0, i).replace(/^\[|\]$/g, ""); port = Number(c.target.slice(i + 1));
+  } else if (c.kind === "http") {
+    try {
+      const u = new URL(c.target);
+      host = u.hostname.replace(/^\[|\]$/g, ""); port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+    } catch { return null; }
+  } else return null;
+  if (c.companion && LOOPBACK.has(host)) host = `companion:${c.companion}`;
+  return `${host}:${port}`;
+}
+
+// Where a check runs: the host it probes, by its companion or its address;
+// "Websites" for a public name; "Other devices" for an address with no companion.
+export function placeOf(c, hosts = []) {
+  if (c.companion) return c.companion;
+  let host = c.target;
+  if (c.kind === "http") { try { host = new URL(c.target).hostname; } catch { /* keep */ } }
+  else if (c.kind === "tcp") host = c.target.slice(0, c.target.lastIndexOf(":"));
+  host = host.replace(/^\[|\]$/g, "");
+  const h = hosts.find((x) => x.address === host || x.name === host);
+  if (h) return h.name;
+  return isIP(host) ? "Other devices" : "Websites";
+}
+
+// Checks that knock on the same port, each set with the one to keep first:
+// the one that alerts you, then HTTP (it proves the app answers) over TCP,
+// then the one with a path.
+export function duplicates(checks) {
+  const by = {};
+  for (const c of checks) {
+    const e = endpoint(c);
+    if (e) (by[e] ??= []).push(c);
+  }
+  const score = (c) => (c.severity === "critical" ? 4 : 0) + (c.kind === "http" ? 2 : 0)
+    + (c.kind === "http" && new URL(c.target).pathname.length > 1 ? 1 : 0);
+  return Object.values(by).filter((l) => l.length > 1)
+    .map((l) => [...l].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name)));
+}

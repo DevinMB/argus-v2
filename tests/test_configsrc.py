@@ -211,8 +211,22 @@ def test_checks_from_a_pasted_argus_yml_are_previewed_then_added(tmp_path):
         "  - {name: Bad Name, kind: http, target: x}\n")
     items = {i["name"]: i for i in configsrc.import_preview(pasted, current)}
     assert items["atlas"]["state"] == "exists"
-    assert items["atlas-2"]["state"] == "covered"
+    assert items["atlas-2"]["state"] == "covered" and items["atlas-2"]["covered_by"] == "atlas"
     assert items["shop"]["state"] == "new" and "site" not in items["shop"]["entry"]
     assert items["Bad Name"]["state"] == "invalid"
     text = configsrc.import_checks(current, [items["shop"]["entry"]])
     assert "shop" in text and "severity: critical" in text
+
+
+def test_an_import_counts_a_port_already_watched_by_another_kind():
+    """couchdb-250 (HTTP /_up) and couchdb (TCP :5984) knock on one port: the
+    import says it is covered, by which check, instead of adding it twice."""
+    from argus import configsrc
+    current = "checks:\n  - {name: couchdb, kind: tcp, target: '192.168.1.250:5984'}\n"
+    pasted = ("checks:\n"
+              "  - {name: couchdb-250, kind: http, target: 'http://192.168.1.250:5984/_up'}\n"
+              "  - {name: other, kind: http, target: 'http://192.168.1.250:5985/'}\n")
+    items = {i["name"]: i for i in configsrc.import_preview(pasted, current)}
+    assert items["couchdb-250"]["state"] == "covered"
+    assert items["couchdb-250"]["covered_by"] == "couchdb"
+    assert items["other"]["state"] == "new"

@@ -13,13 +13,15 @@ import GetStarted, { coverageLine, SetupBar } from "./components/GetStarted.jsx"
 import Heartbeats from "./components/Heartbeats.jsx";
 import DeploySetup from "./components/DeploySetup.jsx";
 import Hosts from "./components/Hosts.jsx";
+import Duplicates from "./components/Duplicates.jsx";
 import WatchMore from "./components/WatchMore.jsx";
 import Jobs from "./components/Jobs.jsx";
 import Meter from "./components/Meter.jsx";
 import Ring from "./components/Ring.jsx";
 import Updates from "./components/Updates.jsx";
-import { acrossSites, ago, agoText, byStatus, filterChecks, groupChecks, headline, lifecycle, siteName, siteNote, summarize } from "./lib.js";
+import { acrossSites, ago, agoText, byStatus, duplicates, filterChecks, groupChecks, headline, lifecycle, siteName, siteNote, summarize } from "./lib.js";
 
+const GROUP_BY = [["host", "By host"], ["group", "Your groups"]];
 const STATUS_FILTERS = [["all", "All"], ["problems", "Problems"], ["up", "Up"], ["paused", "Paused"]];
 
 // The view and the selected check live in the hash (#/updates, #/updates/<repo>,
@@ -121,6 +123,10 @@ export default function App() {
   // Editing checks: the form, and whether this config can be edited here at all.
   const [editing, setEditing] = useState(null); // null, "new", {initial} or a check
   const [wmTab, setWmTab] = useState("suggested");
+  const [groupBy, setGroupByState] = useState(() => {
+    try { return localStorage.getItem("argus.groupBy") || "host"; } catch { return "host"; }
+  });
+  const setGroupBy = (v) => { setGroupByState(v); try { localStorage.setItem("argus.groupBy", v); } catch { /* fine */ } };
   const [wmOpen, setWmOpen] = useState(false); // Watch more, when there is nothing to suggest
   const openWatch = (tab) => {
     setWmTab(tab);
@@ -324,15 +330,21 @@ export default function App() {
                        tab={wmTab} onTab={setWmTab} onAdded={(msg) => { setSaved(msg); reload(); }} />
           )}
 
+          {session?.signed_in && editable && (
+            <Duplicates sets={duplicates(checks)} session={session} onDone={(msg) => { if (msg) setSaved(msg); reload(); }} />
+          )}
+
           {checks.length > 0 && <section className="toolbar">
             <Segmented label="Status" value={status} options={STATUS_FILTERS} onChange={setStatus} />
             {manySites && <Segmented label="Site" value={site} options={siteFilters} onChange={setSite} />}
+            <Segmented label="Group checks" value={groupBy} options={GROUP_BY} onChange={setGroupBy} />
             <input className="search" type="search" placeholder="Filter by name, target or tag"
                    value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter checks" />
             {editable && !editing && <button className="btn" onClick={() => { setSaved(null); openWatch("one"); }}>Add a check</button>}
           </section>}
 
-          {checks.length > 0 && <CheckGrid checks={shown} now={now} sites={sites} groupNames={data.info.groups} onPick={select} />}
+          {checks.length > 0 && <CheckGrid checks={shown} now={now} sites={sites} groupNames={data.info.groups} onPick={select}
+                                                 groupBy={groupBy} hosts={data.companions?.companions ?? []} />}
 
           {/* Runs and timers only when something reports in: an empty box is noise. */}
           {data.jobs.length > 0 && (

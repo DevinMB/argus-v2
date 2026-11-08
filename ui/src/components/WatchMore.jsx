@@ -140,7 +140,7 @@ function Import({ session, onAdded }) {
                      onChange={(e) => { const n = new Set(pick); e.target.checked ? n.add(c.name) : n.delete(c.name); setPick(n); }} />
               <span className="row-main">{c.name}{c.severity === "critical" && <span className="chip chip-critical">alerts</span>}
                 <span className="row-sub muted">{c.kind ? <><span className="kind">{c.kind.toUpperCase()}</span> <span className="mono">{c.target}</span></> : c.why}</span></span>
-              <span className="row-note small">{STATE[c.state]}</span>
+              <span className="row-note small">{c.covered_by ? `watched by ${c.covered_by}` : STATE[c.state]}</span>
               <span className="row-act" />
             </li>
           ))}</ul>

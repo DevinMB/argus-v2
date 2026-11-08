@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle, httpText } from "./lib.js";
+import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle, httpText, endpoint, duplicates, placeOf } from "./lib.js";
 
 const c = (name, status, extra = {}) => ({
   name, status, site: "B", group: "apps", target: `http://${name}/`, ...extra,
@@ -380,5 +380,30 @@ describe("httpText", () => {
     expect(httpText(502)).toMatch(/^Argus did not answer \(HTTP 502\)\. It may be restarting/);
     expect(httpText(403)).toMatch(/sign in again/);
     expect(httpText(418)).toBe("The request failed (HTTP 418).");
+  });
+});
+
+describe("checks of one port, and where a check runs", () => {
+  const c = (name, kind, target, extra = {}) => ({ name, kind, target, severity: "warning", ...extra });
+  it("sees an HTTP path and a TCP check of one port as one", () => {
+    expect(endpoint(c("a", "http", "http://192.168.1.250:5984/_up"))).toBe("192.168.1.250:5984");
+    expect(endpoint(c("b", "tcp", "192.168.1.250:5984"))).toBe("192.168.1.250:5984");
+    expect(endpoint(c("c", "tcp", "127.0.0.1:8787", { companion: "atlas-lab" }))).toBe("companion:atlas-lab:8787");
+    expect(endpoint(c("d", "ping", "10.0.0.1"))).toBe(null);
+  });
+  it("keeps the check that alerts, then HTTP, then the one with a path", () => {
+    const sets = duplicates([c("couchdb", "tcp", "192.168.1.250:5984"), c("couchdb-250", "http", "http://192.168.1.250:5984/_up"),
+      c("grafana", "http", "http://10.0.0.20:3000/"), c("grafana-b", "http", "http://10.0.0.20:3000/api/health"),
+      c("solo", "http", "http://10.0.0.9/")]);
+    expect(sets.map((s) => s.map((x) => x.name))).toEqual([["couchdb-250", "couchdb"], ["grafana-b", "grafana"]]);
+    const alerting = duplicates([c("t", "tcp", "10.0.0.5:80", { severity: "critical" }), c("h", "http", "http://10.0.0.5/x")]);
+    expect(alerting[0][0].name).toBe("t");
+  });
+  it("places a check on its host, a website, or another device", () => {
+    const hosts = [{ name: "slayerz-lab", address: "192.168.1.250" }];
+    expect(placeOf(c("a", "tcp", "192.168.1.250:5984"), hosts)).toBe("slayerz-lab");
+    expect(placeOf(c("b", "http", "https://shop.example/"), hosts)).toBe("Websites");
+    expect(placeOf(c("c", "http", "http://192.168.10.5:8123/"), hosts)).toBe("Other devices");
+    expect(placeOf(c("d", "tcp", "127.0.0.1:8787", { companion: "atlas-lab" }), hosts)).toBe("atlas-lab");
   });
 });

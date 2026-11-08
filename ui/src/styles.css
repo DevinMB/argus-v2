@@ -944,3 +944,5 @@ button.ctable-row:hover { background: var(--raise); }
   .settings > .panel > .eyebrow:first-child { grid-column: 1; grid-row: 1 / span 60; margin: 2px 0 0; line-height: 1.5; }
   .settings > .panel > :nth-child(2) { margin-top: 0; }
 }
+.dupes { border-color: rgb(255 225 74 / 0.35); }
+.dupes .rows li { grid-template-columns: minmax(0, 1fr) auto; }
