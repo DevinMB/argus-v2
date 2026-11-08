@@ -77,7 +77,7 @@ func runOutside(timeout time.Duration, env []string, name string, args ...string
 			for _, e := range env {
 				full = append(full, "--setenv="+e)
 			}
-			full = append(append(full, "--", name), args...)
+			full = append(append(full, "--", name), systemdLiteral(args)...)
 			out, err := runIn("/", nil, timeout+time.Minute, "systemd-run", full...)
 			if err == nil || !strings.Contains(out, "Failed to start transient") {
 				return out, err
@@ -89,6 +89,17 @@ func runOutside(timeout time.Duration, env []string, name string, args ...string
 		}
 	}
 	return runIn("/", env, timeout, name, args...) // OpenRC: no sandbox to leave
+}
+
+// systemdLiteral escapes $ for systemd-run, which expands ${NAME} in the
+// command it starts: a script's own ${d} became "" (the first mars-b
+// uninstall could not move its stack).
+func systemdLiteral(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = strings.ReplaceAll(a, "$", "$$")
+	}
+	return out
 }
 
 type result struct {

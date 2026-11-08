@@ -19,29 +19,38 @@ import (
 //
 // ARGUS_ROOT prefixes every path, for tests only.
 
+// No ${...} or % in these: systemd-run expands both in a command line (runOutside
+// escapes $ too, but the scripts do not lean on it). A stack left behind makes
+// the handback fail, so the companion stays and the owner sees why.
 const handBackScript = `set -u
-R="${ARGUS_ROOT:-}"
+R=$(printenv ARGUS_ROOT || true)
 src="$R/var/lib/argus-companion/stacks"
 if [ ! -d "$src" ] || [ -z "$(ls -A "$src" 2>/dev/null)" ]; then
   echo "no stacks Argus created on this host"
   exit 0
 fi
 mkdir -p "$R/opt/stacks"
-for d in "$src"/*/; do
+left=0
+for d in "$src"/*; do
   [ -d "$d" ] || continue
   n=$(basename "$d")
-  dst="$R/opt/stacks/$n"
-  [ -e "$dst" ] && dst="$R/opt/stacks/$n-argus"
-  if [ -e "$dst" ]; then
-    echo "kept $n in $src: $R/opt/stacks/$n and $dst both exist"
+  to="$n"
+  [ -e "$R/opt/stacks/$to" ] && to="$n-argus"
+  if [ -e "$R/opt/stacks/$to" ]; then
+    echo "kept $n: /opt/stacks/$n and /opt/stacks/$n-argus both exist"
+    left=1
     continue
   fi
-  if mv "${d%/}" "$dst"; then echo "handed back $n: ${dst#$R}"; else echo "could not move $n"; fi
+  if mv "$d" "$R/opt/stacks/$to"; then echo "handed back $n: /opt/stacks/$to"; else echo "could not move $n"; left=1; fi
 done
+if [ "$left" = 1 ]; then
+  echo "so the companion stays: move or rename the folders named above, then uninstall again"
+  exit 1
+fi
 `
 
 const removalScript = `set -u
-R="${ARGUS_ROOT:-}"
+R=$(printenv ARGUS_ROOT || true)
 rm -f "$R/usr/local/bin/argus-companion"
 rm -rf "$R/etc/argus-companion"
 state="$R/var/lib/argus-companion"
