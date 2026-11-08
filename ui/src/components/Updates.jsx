@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Track from "./Track.jsx";
 import {
-  STAGES, isAuto, agoText, lifecycle, lifecycleHeadline, recentMerges, safeHref,
+  STAGES, isAuto, agoText, lifecycle, lifecycleHeadline, recentMerges, safeHref, tidyTitle,
 } from "../lib.js";
 
 const CI = { success: "passed", failure: "failed", running: "running", none: "no CI yet" };
@@ -38,7 +38,8 @@ function Board({ rows }) {
             <p className="lane-hint">{hint}</p>
             <div className="lane-apps">
               {!here.length && <span className="lane-empty">none</span>}
-              {here.map(({ repo, state }) => (
+              {key === "live" && here.length > 0 && <a className="lane-empty" href="#up-to-date">listed below</a>}
+              {key !== "live" && here.map(({ repo, state }) => (
                 <a key={repo.name} href={`#/updates/${encodeURIComponent(repo.name)}`}
                    className={`app-chip tone-bg-${state.tone}`} title={state.label}>
                   {repo.name}
@@ -97,9 +98,14 @@ function Details({ repo, now }) {
   );
 }
 
+const lastChange = (repo) => {
+  const t = tidyTitle(repo.main?.title) || `sha-${repo.main?.sha}`;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
 // One app as a row: its state in words, when it last changed, and the full
 // track when opened.
-function AppRow({ repo, state, now, open, onToggle }) {
+function AppRow({ repo, state, now, open, onToggle, grouped }) {
   // When it went live if we know, else when its newest change merged.
   const when = state.deployedAt ? `deployed ${agoText(now - state.deployedAt)}`
     : repo.main?.started_at ? `merged ${agoText(now - repo.main.started_at)}` : "";
@@ -109,8 +115,9 @@ function AppRow({ repo, state, now, open, onToggle }) {
       <button className="app-row" aria-expanded={open} onClick={onToggle}>
         <span className={`dot dot-${state.tone}`} aria-hidden="true" />
         <span className="app-name">{repo.name}</span>
-        <span className={`app-label st-${state.tone}`}>{state.label}</span>
-        <span className="app-sentence">{state.sentence}</span>
+        <span className={`app-label ${grouped ? "app-where" : `st-${state.tone}`}`}>{grouped ? state.where : state.label}</span>
+        {/* Up to date, the newest change says it all; how it ships sits in the label column. */}
+        <span className="app-sentence">{grouped ? lastChange(repo) : state.sentence}</span>
         <span className="app-when">
           {alerts > 0 && <span className="chip sev-high">{alerts} alert{alerts > 1 ? "s" : ""}</span>}
           {when}
@@ -202,12 +209,12 @@ export default function Updates({ updates, now, focus }) {
         const list = rows.filter((r) => groupOf(r.state) === key);
         if (!list.length) return null;
         return (
-          <section key={key} className={`group group-${key}`}>
+          <section key={key} id={key === "done" ? "up-to-date" : undefined} className={`group group-${key}`}>
             <h2 className="eyebrow">{title} <span className="count">{list.length}</span></h2>
             <p className="group-hint">{hint}</p>
             <ul className="apps">
               {list.map(({ repo, state }) => (
-                <AppRow key={repo.name} repo={repo} state={state} now={now}
+                <AppRow key={repo.name} repo={repo} state={state} now={now} grouped={key === "done" && state.label === "Up to date"}
                         open={opened.has(repo.name)} onToggle={() => toggle(repo.name)} />
               ))}
             </ul>

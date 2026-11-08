@@ -18,7 +18,7 @@ import Jobs from "./components/Jobs.jsx";
 import Meter from "./components/Meter.jsx";
 import Ring from "./components/Ring.jsx";
 import Updates from "./components/Updates.jsx";
-import { acrossSites, ago, agoText, byStatus, filterChecks, groupChecks, headline, joinList, lifecycle, siteName, siteNote, summarize } from "./lib.js";
+import { acrossSites, ago, agoText, byStatus, filterChecks, groupChecks, headline, lifecycle, siteName, siteNote, summarize } from "./lib.js";
 
 const STATUS_FILTERS = [["all", "All"], ["problems", "Problems"], ["up", "Up"], ["paused", "Paused"]];
 
@@ -121,8 +121,10 @@ export default function App() {
   // Editing checks: the form, and whether this config can be edited here at all.
   const [editing, setEditing] = useState(null); // null, "new", {initial} or a check
   const [wmTab, setWmTab] = useState("suggested");
+  const [wmOpen, setWmOpen] = useState(false); // Watch more, when there is nothing to suggest
   const openWatch = (tab) => {
     setWmTab(tab);
+    setWmOpen(true);
     setTimeout(() => document.getElementById("watch-more")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
   const [editable, setEditable] = useState(false);
@@ -255,14 +257,14 @@ export default function App() {
               <h1>{headline(sum)}</h1>
               {checks.length ? (
                 <p className="lede">
-                  {checks.length} check{checks.length === 1 ? "" : "s"} every minute{acrossSites(siteOrder.length)}, covering{" "}
-                  {joinList(groupChecks(checks).map(([g]) => data.info.groups?.[g] ?? g))}. Three
-                  failures in a row and a check is down; the critical ones page you.
+                  {checks.length} check{checks.length === 1 ? "" : "s"} in {groupChecks(checks).length} group{groupChecks(checks).length === 1 ? "" : "s"}, every
+                  minute{acrossSites(siteOrder.length)}. Three failures in a row and a check is down; the ones set to
+                  alert send you a message.
                 </p>
               ) : (
                 <p className="lede">
                   Nothing to check yet. {editable
-                    ? <>Press <strong>Add a check</strong> below for anything with a URL, a port or an address.</>
+                    ? <>Below, pick what to watch on your hosts, or add any website, port or device.</>
                     : <>Sign in and press <strong>Add a check</strong>, or edit <code>argus.yml</code>.</>}{" "}
                   Meanwhile, <a href="#/alerts">set up alerts</a> so Argus can reach you.
                 </p>
@@ -276,15 +278,15 @@ export default function App() {
                                 tone={ss.down ? "down" : ss.failing ? "failing" : "up"}
                                 sub={siteNote(ss)} />;
                 })}
-                <Meter label="Pages if down" value={critical.filter((c) => c.status === "up").length}
+                {checks.length > 0 && <Meter label="Pages if down" value={critical.filter((c) => c.status === "up").length}
                        total={critical.length} tone="accent"
                        sub={critical.length ? `critical checks up${pausedCritical ? `, ${pausedCritical} paused` : ""}`
-                         : "nothing alerts you yet: choose Alert on a check"} />
+                         : "nothing alerts you yet: choose Alert on a check"} />}
               </div>
             </div>
           </section>
 
-          <section className="attention" aria-live="polite">
+          {checks.length > 0 && <section className="attention" aria-live="polite">
             {problems.length === 0 ? (
               <p className="quiet">Nothing needs attention.</p>
             ) : (
@@ -302,7 +304,7 @@ export default function App() {
                 ))}
               </ul>
             )}
-          </section>
+          </section>}
 
           {saved && <p className="form-ok" role="status">{saved}</p>}
           {editing && (
@@ -315,22 +317,22 @@ export default function App() {
             </div>
           )}
 
-          {session?.signed_in && editable && (
+          {session?.signed_in && editable && (wmOpen || !checks.length || (data.start?.suggestions ?? []).length > 0) && (
             <WatchMore suggestions={data.start?.suggestions ?? []} session={session} sites={sites}
                        groups={groupChecks(checks).map(([g]) => g)}
                        hosts={(data.companions?.companions ?? []).map((h) => h.name)}
                        tab={wmTab} onTab={setWmTab} onAdded={(msg) => { setSaved(msg); reload(); }} />
           )}
 
-          <section className="toolbar">
+          {checks.length > 0 && <section className="toolbar">
             <Segmented label="Status" value={status} options={STATUS_FILTERS} onChange={setStatus} />
             {manySites && <Segmented label="Site" value={site} options={siteFilters} onChange={setSite} />}
             <input className="search" type="search" placeholder="Filter by name, target or tag"
                    value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter checks" />
             {editable && !editing && <button className="btn" onClick={() => { setSaved(null); openWatch("one"); }}>Add a check</button>}
-          </section>
+          </section>}
 
-          <CheckGrid checks={shown} now={now} sites={sites} onPick={select} />
+          {checks.length > 0 && <CheckGrid checks={shown} now={now} sites={sites} groupNames={data.info.groups} onPick={select} />}
 
           {/* Runs and timers only when something reports in: an empty box is noise. */}
           {data.jobs.length > 0 && (
@@ -355,8 +357,8 @@ export default function App() {
       <footer className="foot">
         <div>
           <div className="eyebrow">Argus</div>
-          <a href="/api/checks">/api/checks</a>
-          <a href="/metrics">/metrics</a>
+          <a href="/api/checks">Checks API</a>
+          <a href="/metrics">Prometheus metrics</a>
         </div>
         {Object.entries(linkGroups(data?.info.links)).map(([group, links]) => (
           <div key={group}>
@@ -364,7 +366,7 @@ export default function App() {
             {links.map((l) => <a key={l.url} href={l.url}>{l.label}</a>)}
           </div>
         ))}
-        <div className="foot-note">Checks live in argus.yml; alerts and access are set here, behind the admin password.</div>
+        {data && <div className="foot-note">Argus {data.info.version.replace(/-dev$/, "")}</div>}
       </footer>
 
       {selected && <CheckDrawer name={selected} now={now} sites={sites} csrf={session?.signed_in ? session.csrf : undefined}

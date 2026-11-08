@@ -619,7 +619,8 @@ function backupTag(host, guest) {
 }
 
 function Tags({ items, empty = "all good" }) {
-  if (!items.length) return <span className="tag tag-ok">{empty}</span>;
+  // Fine is the normal state: say it quietly, so the rows that need a look stand out.
+  if (!items.length) return <span className="tag-none">{empty}</span>;
   return <span className="tags">{items.map(([tone, text]) => <span key={text} className={`tag tag-${tone}`}>{text}</span>)}</span>;
 }
 

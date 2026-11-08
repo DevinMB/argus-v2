@@ -101,7 +101,7 @@ function ArgusVersion({ session }) {
     <div className="panel" id="version">
       <h2 className="eyebrow">Argus version</h2>
       <p>
-        Running <span className="mono">{v.current.slice(0, 7)}</span>.{" "}
+        Running build <span className="mono">{v.current.slice(0, 7)}</span>.{" "}
         {v.up_to_date ? <span className="st-up">Up to date.</span>
           : v.behind > 0 ? <strong>{v.behind} change{v.behind === 1 ? "" : "s"} since this build.</strong>
           : v.error ? <span className="muted">{v.error}.</span> : null}
@@ -111,7 +111,7 @@ function ArgusVersion({ session }) {
       )}
       {(busy || fresh) && (
         <p className={`small ${u.state === "ok" ? "st-up" : busy ? "" : "st-failing"}`} role="status">
-          {UPDATE[u.state]}{u.summary && !busy ? `: ${u.summary}` : ""}</p>
+          {UPDATE[u.state]}{u.summary && !busy ? `: ${u.summary.replace(/^updated;\s*/i, "")}` : ""}</p>
       )}
       {session?.signed_in && v.behind > 0 && !busy && (v.host ? (
         <div className="actions">
@@ -177,11 +177,6 @@ export default function Account({ session, onSession }) {
             </small>
           </span>
         </label>
-      </div>
-
-      <div className="panel">
-        <h2 className="eyebrow">Settings</h2>
-        <p><a href="#/config">Config</a>: where argus.yml lives, the whole file, export. · <a href="#/github">GitHub</a>: repos, deploys, tokens.</p>
       </div>
 
       <form className="panel" onSubmit={change}>

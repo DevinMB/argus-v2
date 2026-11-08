@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay } from "./lib.js";
+import { acrossSites, attention, backupLabel, failedUnits, guestsNet, installHelp, guestHostName, hostSub, hostTree, patchLabel, bytes, diskTone, hostSentence, sortContainers, errorText, pagingSentence, watcherSentence, jobLine, took, ago, agoText, filterChecks, groupChecks, headline, isPublic, joinList, ringOrder, safeHref, siteName, siteNote, summarize, jobResult, lifecycle, lifecycleHeadline, nextRun, recentMerges, scheduleDay, tidyTitle } from "./lib.js";
 
 const c = (name, status, extra = {}) => ({
   name, status, site: "B", group: "apps", target: `http://${name}/`, ...extra,
@@ -93,6 +93,7 @@ describe("headline and siteNote", () => {
     expect(headline(s({ down: 1, failing: 1, unknown: 1 }))).toBe("Something is down.");
     expect(siteNote(s({ failing: 2, unknown: 1 }))).toBe("2 failing");
     expect(headline(s({ up: 3 }))).toBe("All quiet.");
+    expect(headline(s({ total: 0 }))).toBe("Nothing watched yet.");
     expect(siteNote(s({ up: 3 }))).toBe("all up");
   });
   it("a paused check is quiet: no problem, but said", () => {
@@ -136,7 +137,7 @@ describe("life cycle", () => {
     expect(lib.sentence).toMatch(/ships inside another app/);
     // Found by "Connect GitHub": its deploy is unknown, so no claim about it.
     const found = lifecycle(repo({ track: DONE.slice(0, 3), stack: null, configured: false }));
-    expect(found.sentence).toMatch(/does not follow its deploys/);
+    expect(found.sentence).toMatch(/Deployed outside Argus/);
     expect(lifecycle(repo({ main: null, branch: "trunk" })).sentence).toMatch(/No CI runs on trunk/);
   });
   it("puts each open update where it is: testing, merging, or waiting for you", () => {
@@ -363,5 +364,13 @@ describe("failed units", () => {
 describe("a companion out of date", () => {
   it("needs a look", () => {
     expect(attention({ status: "ok", companion_stale: true, report: {} })).toEqual([["failing", "companion out of date"]]);
+  });
+});
+
+describe("tidyTitle", () => {
+  it("names Dependabot merges and plain PR merges", () => {
+    expect(tidyTitle("Merge pull request #14 from DevinMB/dependabot/pip/updates-2e49036dea")).toBe("a Dependabot update (#14)");
+    expect(tidyTitle("Merge pull request #15 from DevinMB/harden/chromium-sandbox")).toBe("pull request #15");
+    expect(tidyTitle("Bump httpx")).toBe("Bump httpx");
   });
 });
