@@ -3,42 +3,61 @@ import { ago, agoText, isPublic, siteName } from "../lib.js";
 const LABEL = { up: "up", failing: "failing", down: "down", unknown: "waiting", paused: "paused" };
 const RANK = { down: 0, failing: 1, unknown: 2, paused: 3, up: 4 };
 
-// Every check on one table, problems first: what it probes, whether it alerts
-// you, and how it is doing. The drawer has the history.
-export default function CheckGrid({ checks, now, sites, onPick }) {
+// Every check on one table, in its group, problems first: what it probes,
+// whether it alerts you, and how it is doing. The drawer has the history.
+function Row({ c, now, many, sites, onPick }) {
+  return (
+    <button className={`ctable-row ctable-${c.status}`} role="row" onClick={() => onPick(c.name)}
+            title={c.description || undefined}>
+      <span className="ct-name">
+        <span className={`dot dot-${c.status}`} aria-hidden="true" />
+        <span className="ct-title"><strong>{c.name}</strong>
+          {many && <span className="muted small">{siteName(sites, c.site)}</span>}</span>
+      </span>
+      <span className="ct-target"><span className="kind">{c.kind.toUpperCase()}</span>
+        <span className="mono" title={c.target}>{c.target.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
+        {isPublic(c) && <span className="chip chip-public" title="Reached from the internet">public</span>}</span>
+      <span className={`ct-alerts small ${c.severity === "critical" ? "st-accent" : "muted"}`}>
+        {c.severity === "critical" ? "alerts you" : "dashboard only"}</span>
+      <span className="ct-now small">
+        <span className={`st-${c.status}`}>{LABEL[c.status] ?? c.status}</span>
+        <span className="muted"> {c.paused ? agoText(now - c.paused.since)
+          : c.last_change ? `for ${ago(now - c.last_change)}` : ""}</span>
+      </span>
+      {c.status !== "up" && (c.paused?.reason || c.last_error) && (
+        <span className="ct-why small">{c.paused ? (c.paused.reason || "paused") : c.last_error}</span>
+      )}
+    </button>
+  );
+}
+
+export default function CheckGrid({ checks, now, sites, groupNames, onPick }) {
   if (!checks.length) return <p className="empty">No checks match.</p>;
   const many = Object.keys(sites ?? {}).length > 1;
-  const rows = [...checks].sort((a, b) => (RANK[a.status] - RANK[b.status]) || a.group.localeCompare(b.group)
-    || a.name.localeCompare(b.name));
+  const groups = {};
+  for (const c of checks) (groups[c.group] ??= []).push(c);
+  const worst = (list) => Math.min(...list.map((c) => RANK[c.status] ?? 2));
+  const order = Object.keys(groups).sort((a, b) => (worst(groups[a]) - worst(groups[b])) || a.localeCompare(b));
   return (
     <div className="ctable" role="table">
       <div className="ctable-row ctable-head" role="row">
         <span className="eyebrow">check</span><span className="eyebrow">what it probes</span>
         <span className="eyebrow">when down</span><span className="eyebrow">now</span>
       </div>
-      {rows.map((c) => (
-        <button key={c.name} className={`ctable-row ctable-${c.status}`} role="row" onClick={() => onPick(c.name)}
-                title={c.description || undefined}>
-          <span className="ct-name">
-            <span className={`dot dot-${c.status}`} aria-hidden="true" />
-            <span className="ct-title"><strong>{c.name}</strong>
-              <span className="muted small">{c.group}{many ? ` · ${siteName(sites, c.site)}` : ""}</span></span>
-          </span>
-          <span className="ct-target"><span className="kind">{c.kind.toUpperCase()}</span>
-            <span className="mono" title={c.target}>{c.target.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
-            {isPublic(c) && <span className="chip chip-public" title="Reached from the internet">public</span>}</span>
-          <span className={`ct-alerts small ${c.severity === "critical" ? "st-accent" : "muted"}`}>
-            {c.severity === "critical" ? "alerts you" : "shows here"}</span>
-          <span className="ct-now small">
-            <span className={`st-${c.status}`}>{LABEL[c.status] ?? c.status}</span>
-            <span className="muted"> {c.paused ? agoText(now - c.paused.since)
-              : c.last_change ? `for ${ago(now - c.last_change)}` : ""}</span>
-          </span>
-          {c.status !== "up" && (c.paused?.reason || c.last_error) && (
-            <span className="ct-why small">{c.paused ? (c.paused.reason || "paused") : c.last_error}</span>
-          )}
-        </button>
-      ))}
+      {order.map((g) => {
+        const list = groups[g].sort((a, b) => (RANK[a.status] - RANK[b.status]) || a.name.localeCompare(b.name));
+        const bad = list.filter((c) => c.status !== "up" && c.status !== "paused").length;
+        return (
+          <div key={g} role="rowgroup" className="ctable-group">
+            <div className="ctable-ghead" role="row">
+              <span className="ct-gname">{groupNames?.[g] ?? g}</span>
+              <span className={`small ${bad ? "st-failing" : "muted"}`}>
+                {bad ? `${bad} of ${list.length} need a look` : `${list.length} up`}</span>
+            </div>
+            {list.map((c) => <Row key={c.name} c={c} now={now} many={many} sites={sites} onPick={onPick} />)}
+          </div>
+        );
+      })}
     </div>
   );
 }

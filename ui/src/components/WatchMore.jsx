@@ -28,7 +28,7 @@ function SuggestedRow({ g, value, onChange }) {
   );
 }
 
-function Suggested({ suggestions, session, onAdded }) {
+function Suggested({ suggestions, session, fleet, onAdded, onTab }) {
   const [pick, setPick] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -51,7 +51,12 @@ function Suggested({ suggestions, session, onAdded }) {
     setBusy(false);
   };
   if (!suggestions.length) {
-    return <p className="muted small">Every port your containers publish is watched. Add a website or a device by hand, or import an argus.yml.</p>;
+    return fleet.length ? (
+      <p className="muted small">Every port your containers publish is watched. Add a website or a device by hand, or import an argus.yml.</p>
+    ) : (
+      <p className="muted small">Once a host reports in, the services it runs show up here to watch with one click.
+        Until then: <a href="#/hosts">add a host</a>, or <a href="#watch-more" onClick={(e) => { e.preventDefault(); onTab("one"); }}>add a website or service</a> by hand.</p>
+    );
   }
   return (
     <>
@@ -161,7 +166,7 @@ export default function WatchMore({ suggestions, session, sites, groups, hosts, 
              onClick={(e) => { e.preventDefault(); onTab(k); }}>{label}</a>
         ))}</nav>
       </div>
-      {tab === "suggested" && <Suggested suggestions={suggestions} session={session} onAdded={onAdded} />}
+      {tab === "suggested" && <Suggested suggestions={suggestions} session={session} fleet={hosts ?? []} onAdded={onAdded} onTab={onTab} />}
       {tab === "one" && (
         <CheckForm session={session} check={null} sites={sites} groups={groups} hosts={hosts}
                    onDone={() => onAdded("Check added.")} onCancel={() => onTab("suggested")} />

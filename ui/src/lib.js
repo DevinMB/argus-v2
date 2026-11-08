@@ -121,6 +121,7 @@ export function stamp(ts) {
 
 // Never claim "all up" while checks are still waiting for a first result.
 export function headline(s) {
+  if (!s.total) return "Nothing watched yet.";
   if (s.down) return "Something is down.";
   if (s.failing) return "Something is wobbling.";
   if (s.unknown) return "Starting up.";
@@ -191,8 +192,8 @@ export function lifecycle(repo) {
   const testing = ups.filter((u) => !u.waits_for_you && (u.ci === "running" || u.ci === "none"));
   const more = (list) => (list.length > 1 ? ` (and ${list.length - 1} more)` : "");
   const deployedAt = steps.find((s) => s.key === "deployed" && s.status === "done")?.at ?? null;
-  const out = (column, tone, label, sentence, url, you = false) =>
-    ({ column, tone, label, sentence, url, you, deployedAt });
+  const out = (column, tone, label, sentence, url, you = false, where = "") =>
+    ({ column, tone, label, sentence, url, you, deployedAt, where });
 
   const broken = steps.find((s) => s.status === "failed" && s.key !== "updates");
   if (broken) {
@@ -242,11 +243,13 @@ export function lifecycle(repo) {
   }
   const deployed = step("deployed");
   const healthy = step("healthy");
-  const change = `${main.title || `sha-${main.sha}`}`;
+  const change = tidyTitle(main.title) || `sha-${main.sha}`;
   if (!deployed) {
-    return out("live", "up", "Up to date", repo.configured === false
-      ? `Built ${change}. Argus does not follow its deploys.`
-      : `Built ${change}. It ships inside another app, so it has no deploy of its own.`);
+    return repo.configured === false
+      ? out("live", "up", "Up to date", `Built ${change}. Deployed outside Argus, so it is not followed further.`,
+        undefined, false, "built")
+      : out("live", "up", "Up to date", `Built ${change}. It ships inside another app, so it has no deploy of its own.`,
+        undefined, false, "ships in another app");
   }
   if (deployed.status === "not_wired") {
     return out("live", "unknown", "Built, not deployed", `${change} is built; ${deployed.detail.toLowerCase()}.`);
@@ -256,7 +259,16 @@ export function lifecycle(repo) {
     return out("live", "paused", "Paused", `Live${where}. ${healthy.detail}, so it does not page.`);
   }
   const check = healthy?.status === "not_wired" ? " (no health check)" : "";
-  return out("live", "up", "Up to date", `Live${where}${check}. Last change: ${change}.`);
+  return out("live", "up", "Up to date", `Live${where}${check}. Last change: ${change}.`, undefined, false,
+    `live${where}${check}`);
+}
+
+// GitHub's default merge titles say little ("Merge pull request #14 from
+// owner/dependabot/pip/updates-2e49036dea"): say what they were.
+export function tidyTitle(title = "") {
+  const m = title.match(/^Merge pull request #(\d+) from \S+?\/(\S+)/);
+  if (!m) return title;
+  return m[2].startsWith("dependabot/") ? `a Dependabot update (#${m[1]})` : `pull request #${m[1]}`;
 }
 
 // The page's one-sentence answer: does anything need you, is anything moving.
