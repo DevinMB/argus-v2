@@ -1,6 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
+	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -70,7 +75,7 @@ openssl (3.5.1-1) unstable; urgency=medium
 func TestChangelogsAreLearnedOnceInTheBackground(t *testing.T) {
 	c := &Collector{run: func(string, ...string) (string, int, error) { return "openssl", 0, nil }}
 	calls := 0
-	cl := &Changelogs{known: map[string][2][]string{}, fetch: func(pkg, v string) (string, error) {
+	cl := &Changelogs{known: map[string][2][]string{}, failed: map[string]bool{}, fetch: func(pkg, v string) (string, error) {
 		calls++
 		return "openssl (" + v + ") trixie-security\n  * CVE-2026-1001\n -- x\n", nil
 	}}
@@ -92,5 +97,59 @@ func TestChangelogsAreLearnedOnceInTheBackground(t *testing.T) {
 	cl.fill(c, pkgs)
 	if !reflect.DeepEqual(pkgs[0].CVEs, []string{"CVE-2026-1001"}) || pkgs[0].Source != "openssl" || pkgs[2].CVEs != nil {
 		t.Fatalf("pkgs %+v", pkgs)
+	}
+}
+
+// A security update whose changelog cannot be read says so, and one whose
+// changelog names nothing says that, instead of promising an advisory.
+func TestChangelogsSayWhyNothingShows(t *testing.T) {
+	c := &Collector{run: func(string, ...string) (string, int, error) { return "", 1, nil }}
+	fail := true
+	cl := &Changelogs{known: map[string][2][]string{}, failed: map[string]bool{}, fetch: func(pkg, v string) (string, error) {
+		if fail {
+			return "", errors.New("404")
+		}
+		return pkg + " (" + v + ") trixie-security\n  * Fix a crash.\n -- x\n", nil
+	}}
+	pkgs := []Package{{Name: "vim-common", To: "2+deb13u2", Security: true}}
+	learn := func() {
+		done := make(chan bool)
+		cl.learn(c, cl.fill(c, pkgs), func() { done <- true })
+		<-done
+		cl.fill(c, pkgs)
+	}
+	learn()
+	if pkgs[0].Why != "unavailable" {
+		t.Fatalf("after a failed read: %+v", pkgs[0])
+	}
+	fail = false
+	learn()
+	if pkgs[0].Why != "none" {
+		t.Fatalf("after a read naming nothing: %+v", pkgs[0])
+	}
+}
+
+// The changelog comes out of an unpacked package, even when its doc folder is
+// another package's.
+func TestReadDebChangelog(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "usr/share/doc/vim-common")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	z := gzip.NewWriter(&buf)
+	z.Write([]byte("vim (2:9.1-2+deb13u2) trixie-security; urgency=medium\n\n  * CVE-2026-1234\n\n -- x\n"))
+	z.Close()
+	os.WriteFile(filepath.Join(dir, "changelog.Debian.gz"), buf.Bytes(), 0o644)
+	out, err := readDebChangelog(root, "vim-tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cves, _ := changelogWhy(out); !reflect.DeepEqual(cves, []string{"CVE-2026-1234"}) {
+		t.Fatalf("cves %v", cves)
+	}
+	if n, ok := debSize("Package: vim\nSize: 1832\n"); !ok || n != 1832 {
+		t.Fatalf("size %d %v", n, ok)
 	}
 }
