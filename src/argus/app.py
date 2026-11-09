@@ -288,6 +288,7 @@ class Package(BaseModel):
     cves: list[str] = Field([], max_length=50)
     severity: str = Field("", max_length=20)
     why: Literal["", "none", "unavailable"] = ""
+    changes: str = Field("", max_length=500)
 
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 

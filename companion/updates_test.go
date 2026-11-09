@@ -153,3 +153,24 @@ func TestReadDebChangelog(t *testing.T) {
 		t.Fatalf("size %d %v", n, ok)
 	}
 }
+
+// The row shows what the changelog entry says, so a security-suite update that
+// names no CVE still has a reason.
+func TestChangelogChanges(t *testing.T) {
+	got := changelogChanges(`vim (2:9.1.1230-2+deb13u2) trixie-security; urgency=medium
+
+  * Backport 9.2.0132 to fix test_recover.vim test failure on big-endian systems.
+    (Closes: #1152930)
+  * Fix CVE-2026-1.
+
+ -- James McCoy <jamessan@debian.org>  Wed, 04 Nov 2026 17:12:34 -0500
+
+vim (2:9.1.1230-2+deb13u1) trixie-security; urgency=medium
+
+  * Fix CVE-2025-53905
+`)
+	want := "Backport 9.2.0132 to fix test_recover.vim test failure on big-endian systems. (Closes: #1152930)\nFix CVE-2026-1."
+	if got != want {
+		t.Fatalf("got %q", got)
+	}
+}

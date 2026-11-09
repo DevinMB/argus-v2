@@ -43,6 +43,8 @@ type Package struct {
 	// changelog names none, "unavailable" when the changelog could not be read
 	// yet (tried again each hour). Empty: not looked at yet.
 	Why string `json:"why,omitempty"`
+	// What the new version's changelog entry says, for a security update (apt).
+	Changes string `json:"changes,omitempty"`
 }
 
 const maxPackages = 300
@@ -177,6 +179,35 @@ var (
 	advisoryRe = regexp.MustCompile(`\b(?:DSA|DLA|USN)-\d+(?:-\d+)?\b`)
 )
 
+const maxChanges = 400
+
+// changelogChanges is the newest entry's text: its items, one per line, with
+// wrapped lines joined, cut at maxChanges.
+func changelogChanges(text string) string {
+	var items []string
+	for i, line := range strings.Split(text, "\n") {
+		if i == 0 {
+			continue // "vim (2:9.1-2+deb13u2) trixie-security; urgency=medium"
+		}
+		if strings.HasPrefix(line, " -- ") {
+			break
+		}
+		t := strings.TrimSpace(line)
+		switch {
+		case t == "":
+		case strings.HasPrefix(t, "* ") || strings.HasPrefix(t, "- ") || strings.HasPrefix(t, "[") || len(items) == 0:
+			items = append(items, strings.TrimSpace(strings.TrimLeft(t, "*- ")))
+		default:
+			items[len(items)-1] += " " + t
+		}
+	}
+	out := strings.Join(items, "\n")
+	if r := []rune(out); len(r) > maxChanges {
+		out = string(r[:maxChanges-1]) + "…"
+	}
+	return out
+}
+
 // changelogWhy reads the newest entry of a Debian changelog (up to its " -- "
 // trailer): the CVEs and advisories it names.
 func changelogWhy(text string) (cves, advisories []string) {
@@ -198,6 +229,7 @@ type Changelogs struct {
 	mu     sync.Mutex
 	known  map[string][2][]string // "source new-version" -> cves, advisories
 	failed map[string]bool        // tried and could not read; tried again next look
+	notes  map[string]string      // what the entry says
 	busy   bool
 	fetch  func(pkg, version string) (string, error)
 }
@@ -205,7 +237,7 @@ type Changelogs struct {
 const changelogsPerLook = 15
 
 func newChangelogs() *Changelogs {
-	return &Changelogs{known: map[string][2][]string{}, failed: map[string]bool{}, fetch: func(pkg, version string) (string, error) {
+	return &Changelogs{known: map[string][2][]string{}, failed: map[string]bool{}, notes: map[string]string{}, fetch: func(pkg, version string) (string, error) {
 		out, code, err := runCommandFor(20*time.Second, "apt-get", "changelog", pkg+"="+version)
 		if err == nil && code == 0 {
 			return out, nil
@@ -315,7 +347,7 @@ func (cl *Changelogs) fill(c *Collector, pkgs []Package) []Package {
 		}
 		k := cl.key(c, p)
 		if why, ok := cl.known[k]; ok {
-			p.CVEs, p.Advisories, p.Why = why[0], why[1], ""
+			p.CVEs, p.Advisories, p.Why, p.Changes = why[0], why[1], "", cl.notes[k]
 			if len(why[0]) == 0 && len(why[1]) == 0 {
 				p.Why = "none"
 			}
@@ -355,6 +387,9 @@ func (cl *Changelogs) learn(c *Collector, todo []Package, done func()) {
 				seen[k] = true
 				cves, adv := changelogWhy(out)
 				cl.known[k] = [2][]string{cves, adv}
+				if cl.notes != nil {
+					cl.notes[k] = changelogChanges(out)
+				}
 				delete(cl.failed, k)
 			} else {
 				cl.failed[k] = true

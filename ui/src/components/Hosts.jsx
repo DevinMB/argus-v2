@@ -1173,10 +1173,11 @@ function PackageList({ packages, os, pending }) {
               })}</span>
             )}
             {p.security && !p.advisories?.length && !p.cves?.length && (
-              <span className="row-sub muted small">{p.why === "none" ? "security update; its changelog names no advisory or CVE"
+              <span className="row-sub muted small">{p.why === "none" ? "Shipped as a security update, but its changelog names no CVE or advisory."
                 : p.why === "unavailable" ? "security update; its changelog could not be read yet, tried again each hour"
                 : "security update; its advisory shows here within the hour"}</span>
-            )}</span>
+            )}
+            {p.changes && <span className="row-sub small pkg-changes">{p.changes}</span>}</span>
           <span className="row-note small">{p.security ? <span className={`tag tag-${p.severity === "Critical" || p.severity === "Important" ? "down" : "failing"}`}>
             {p.severity ? `${p.severity.toLowerCase()} security` : "security"}</span> : null}</span>
           <span className="row-act" />
