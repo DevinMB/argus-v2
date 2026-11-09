@@ -1,9 +1,17 @@
 package main
 
 import (
+	"compress/gzip"
+	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +22,9 @@ import (
 //   - apt: the dry run names each package, its installed and new version and
 //     its suite; the new version's changelog entry (apt-get changelog, from the
 //     distro's own changelog server) names the CVEs and the DSA, DLA or USN.
+//     Debian's changelog server has no security-suite versions, so when it has
+//     none the changelog comes out of the package itself, downloaded from the
+//     mirror the host already patches from.
 //   - dnf: dnf updateinfo, already on the host, names each advisory
 //     (RLSA-2026:1234) and its severity.
 //   - apk: names and versions only.
@@ -28,6 +39,10 @@ type Package struct {
 	Advisories []string `json:"advisories,omitempty"`
 	CVEs       []string `json:"cves,omitempty"`
 	Severity   string   `json:"severity,omitempty"`
+	// For a security update with no advisories or CVEs: "none" when its
+	// changelog names none, "unavailable" when the changelog could not be read
+	// yet (tried again each hour). Empty: not looked at yet.
+	Why string `json:"why,omitempty"`
 }
 
 const maxPackages = 300
@@ -180,22 +195,96 @@ func changelogWhy(text string) (cves, advisories []string) {
 // changelog is downloaded once per version, in the background (a report never
 // waits for the network), a few per hourly look.
 type Changelogs struct {
-	mu    sync.Mutex
-	known map[string][2][]string // "source new-version" -> cves, advisories
-	busy  bool
-	fetch func(pkg, version string) (string, error)
+	mu     sync.Mutex
+	known  map[string][2][]string // "source new-version" -> cves, advisories
+	failed map[string]bool        // tried and could not read; tried again next look
+	busy   bool
+	fetch  func(pkg, version string) (string, error)
 }
 
 const changelogsPerLook = 15
 
 func newChangelogs() *Changelogs {
-	return &Changelogs{known: map[string][2][]string{}, fetch: func(pkg, version string) (string, error) {
+	return &Changelogs{known: map[string][2][]string{}, failed: map[string]bool{}, fetch: func(pkg, version string) (string, error) {
 		out, code, err := runCommandFor(20*time.Second, "apt-get", "changelog", pkg+"="+version)
-		if err == nil && code != 0 {
-			err = fmt.Errorf("apt-get changelog exited %d", code)
+		if err == nil && code == 0 {
+			return out, nil
 		}
-		return out, err
+		return debChangelog(pkg, version)
 	}}
+}
+
+// Packages bigger than this (kernels, firmware) are not downloaded for their changelog.
+const maxChangelogDeb = 64 << 20
+
+// debChangelog downloads the package from the host's own mirror and reads
+// /usr/share/doc/<pkg>/changelog.Debian.gz out of it.
+func debChangelog(pkg, version string) (string, error) {
+	spec := pkg + "=" + version
+	out, _, err := runCommandFor(20*time.Second, "apt-cache", "show", "--no-all-versions", spec)
+	if err != nil {
+		return "", err
+	}
+	if n, ok := debSize(out); !ok {
+		return "", errors.New("apt-cache has no " + spec)
+	} else if n > maxChangelogDeb {
+		return "", fmt.Errorf("%s is %d MB; not downloaded for its changelog", spec, n>>20)
+	}
+	dir, err := os.MkdirTemp("/var/tmp", "argus-changelog-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	get := exec.CommandContext(ctx, "apt-get", "download", "-q", spec)
+	get.Dir, get.Env = dir, append(os.Environ(), "LC_ALL=C")
+	if err := get.Run(); err != nil {
+		return "", fmt.Errorf("apt-get download %s: %w", spec, err)
+	}
+	debs, _ := filepath.Glob(filepath.Join(dir, "*.deb"))
+	if len(debs) != 1 {
+		return "", errors.New("apt-get download left no package")
+	}
+	root := filepath.Join(dir, "x")
+	if err := exec.CommandContext(ctx, "dpkg-deb", "-x", debs[0], root).Run(); err != nil {
+		return "", fmt.Errorf("dpkg-deb -x: %w", err)
+	}
+	return readDebChangelog(root, pkg)
+}
+
+// debSize is the Size: field of an apt-cache show record.
+func debSize(show string) (int64, bool) {
+	for _, line := range strings.Split(show, "\n") {
+		if v, ok := strings.CutPrefix(line, "Size: "); ok {
+			n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			return n, err == nil
+		}
+	}
+	return 0, false
+}
+
+// readDebChangelog reads the package's own Debian changelog from an unpacked
+// tree, or any one there when its doc folder points elsewhere.
+func readDebChangelog(root, pkg string) (string, error) {
+	paths := []string{filepath.Join(root, "usr/share/doc", pkg, "changelog.Debian.gz")}
+	more, _ := filepath.Glob(filepath.Join(root, "usr/share/doc/*/changelog.Debian.gz"))
+	for _, p := range append(paths, more...) {
+		f, err := os.Open(p)
+		if err != nil {
+			continue
+		}
+		defer f.Close()
+		z, err := gzip.NewReader(f)
+		if err != nil {
+			continue
+		}
+		b, err := io.ReadAll(io.LimitReader(z, 4<<20))
+		if err == nil {
+			return string(b), nil
+		}
+	}
+	return "", errors.New("the package carries no Debian changelog")
 }
 
 // key and source name of a security package (its source package groups binaries).
@@ -224,9 +313,16 @@ func (cl *Changelogs) fill(c *Collector, pkgs []Package) []Package {
 		if !p.Security {
 			continue
 		}
-		if why, ok := cl.known[cl.key(c, p)]; ok {
-			p.CVEs, p.Advisories = why[0], why[1]
+		k := cl.key(c, p)
+		if why, ok := cl.known[k]; ok {
+			p.CVEs, p.Advisories, p.Why = why[0], why[1], ""
+			if len(why[0]) == 0 && len(why[1]) == 0 {
+				p.Why = "none"
+			}
 		} else {
+			if cl.failed[k] {
+				p.Why = "unavailable"
+			}
 			todo = append(todo, *p)
 		}
 	}
@@ -251,14 +347,19 @@ func (cl *Changelogs) learn(c *Collector, todo []Package, done func()) {
 			if seen[k] || n >= changelogsPerLook {
 				continue
 			}
-			seen[k] = true
 			n++
-			if out, err := cl.fetch(todo[i].Name, todo[i].To); err == nil {
+			out, err := cl.fetch(todo[i].Name, todo[i].To)
+			cl.mu.Lock()
+			if err == nil {
+				// Another binary of the same source is tried when this one fails.
+				seen[k] = true
 				cves, adv := changelogWhy(out)
-				cl.mu.Lock()
 				cl.known[k] = [2][]string{cves, adv}
-				cl.mu.Unlock()
+				delete(cl.failed, k)
+			} else {
+				cl.failed[k] = true
 			}
+			cl.mu.Unlock()
 		}
 		cl.mu.Lock()
 		cl.busy = false

@@ -287,6 +287,7 @@ class Package(BaseModel):
     advisories: list[str] = Field([], max_length=20)
     cves: list[str] = Field([], max_length=50)
     severity: str = Field("", max_length=20)
+    why: Literal["", "none", "unavailable"] = ""
 
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
