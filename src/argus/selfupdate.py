@@ -9,9 +9,12 @@ old image back if Argus does not come up healthy. Argus restarts in the
 middle, so the request is kept in its settings and the new Argus records the
 result.
 
-What is newer comes from the product repo's newest green build on main (every
-green build on main pushes the image), and the changes from GitHub's compare.
-Both are public: no GitHub connection is needed.
+What is newer (decision 21): a released Argus (ARGUS_VERSION 1.2.3) follows the
+product repo's GitHub releases of its own major version, which is what its
+image tag (:1) pulls; a newer major is only mentioned, since moving to it means
+changing the compose file. A development build (ARGUS_VERSION dev) follows the
+newest green build on main by commit. Both are public: no GitHub connection
+is needed.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import secrets
 from collections.abc import Callable
 
@@ -35,8 +39,33 @@ EVERY = 900  # the Updates page sees a new build within a minute; this should no
 GIVE_UP = 30 * 60  # a request with no result by then failed
 
 
+SEMVER = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+
+
 def own_commit() -> str:
     return os.environ.get("ARGUS_COMMIT", "unknown")
+
+
+def own_version() -> str:
+    return os.environ.get("ARGUS_VERSION", "dev")
+
+
+def semver(v: str | None) -> tuple[int, int, int] | None:
+    m = SEMVER.match(v or "")
+    return (int(m[1]), int(m[2]), int(m[3])) if m else None
+
+
+def text(v: tuple[int, int, int]) -> str:
+    return ".".join(map(str, v))
+
+
+def release_items(body: str) -> list[str]:
+    """The pull request titles in GitHub's generated release notes."""
+    out = []
+    for line in (body or "").splitlines():
+        if line.startswith("* "):
+            out.append(re.sub(r" by @\S+ in https://\S+$", "", line[2:]).strip())
+    return out
 
 
 class SelfUpdate:
@@ -48,6 +77,7 @@ class SelfUpdate:
         self.behind = 0
         self.checked_at: float | None = None
         self.error = ""
+        self.major: str | None = None  # a newer major release, to move to by hand
 
     async def check(self) -> None:
         """The newest green build on main and what changed since this one. GitHub's
@@ -59,6 +89,8 @@ class SelfUpdate:
             await asyncio.sleep(3)
 
     async def _check(self) -> None:
+        if (mine := semver(own_version())) is not None:
+            return await self._check_releases(mine)
         api = "https://api.github.com/repos/" + REPO
         try:
             r = await self.client.get(f"{api}/actions/runs", params={
@@ -78,6 +110,27 @@ class SelfUpdate:
                                 for x in reversed(body.get("commits") or [])][:20]
             self.error = ""
         except (httpx.HTTPError, KeyError, ValueError, IndexError):
+            self.error = "GitHub did not answer; try again in a minute"
+        self.checked_at = self.clock()
+
+    async def _check_releases(self, mine: tuple[int, int, int]) -> None:
+        try:
+            r = await self.client.get(f"https://api.github.com/repos/{REPO}/releases",
+                                      params={"per_page": 50}, timeout=20)
+            r.raise_for_status()
+            found = [(v, x) for x in r.json()
+                     if not x.get("draft") and not x.get("prerelease")
+                     and (v := semver(x.get("tag_name"))) is not None]
+            newer = sorted(((v, x) for v, x in found if v[0] == mine[0] and v > mine),
+                           key=lambda vx: vx[0], reverse=True)
+            self.latest = text(newer[0][0]) if newer else text(mine)
+            self.behind = len(newer)
+            self.changes = [f"{text(v)}: {item}" for v, x in newer
+                            for item in release_items(x.get("body", ""))][:20]
+            majors = [v for v, _ in found if v[0] > mine[0]]
+            self.major = text(max(majors)) if majors else None
+            self.error = ""
+        except (httpx.HTTPError, KeyError, ValueError, TypeError):
             self.error = "GitHub did not answer; try again in a minute"
         self.checked_at = self.clock()
 
@@ -132,12 +185,19 @@ class SelfUpdate:
 
     def view(self, views: list[dict]) -> dict:
         found = self.host_of(views)
-        mine = own_commit()
-        return {"current": mine, "latest": self.latest, "behind": self.behind,
+        mine, version = own_commit(), own_version()
+        released = semver(version) is not None
+        major = version.split(".")[0] if released else "1"
+        image = found[1]["image"] if found else f"{IMAGE}:{major}"
+        return {"current": mine, "version": version, "released": released, "repo": REPO,
+                "latest": self.latest, "behind": self.behind,
                 "changes": self.changes, "checked_at": self.checked_at, "error": self.error,
                 # A check that failed does not prove anything is up to date.
                 "up_to_date": not self.error and bool(self.latest)
-                and self.latest.startswith(mine[:12]),
+                and (self.latest == version if released else self.latest.startswith(mine[:12])),
+                "major": self.major,
+                # An image pinned to one release (:1.2.3) never moves on a pull.
+                "pinned": semver(image.rpartition(":")[2]) is not None,
                 "host": found[0]["name"] if found else None,
-                "image": found[1]["image"] if found else f"{IMAGE}:2",
+                "image": image,
                 "update": self.state()}

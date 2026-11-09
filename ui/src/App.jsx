@@ -181,10 +181,11 @@ export default function App() {
           {fetchedAt && !error && <span className="hide-sm">Updated {agoText((Date.now() - fetchedAt) / 1000)}</span>}
           {data && (
             <a className="top-version hide-sm" href="#/account" title={`Build ${data.info.commit}`}>
-              {data.info.version.replace(/-dev$/, "")} <span className="mono">{data.info.commit.slice(0, 7)}</span></a>
+              {data.info.version === "dev" ? <>dev <span className="mono">{data.info.commit.slice(0, 7)}</span></> : data.info.version}</a>
           )}
           {data?.version?.behind > 0 && (
-            <a className="top-update" href="#/account" title={`${data.version.behind} change${data.version.behind === 1 ? "" : "s"} since this build`}>
+            <a className="top-update" href="#/account" title={data.version.released
+              ? `${data.version.latest} is out` : `${data.version.behind} change${data.version.behind === 1 ? "" : "s"} since this build`}>
               Update available</a>
           )}
           {session && (session.signed_in
@@ -382,7 +383,7 @@ export default function App() {
             {links.map((l) => <a key={l.url} href={l.url}>{l.label}</a>)}
           </div>
         ))}
-        {data && <div className="foot-note">Argus {data.info.version.replace(/-dev$/, "")}</div>}
+        {data && <div className="foot-note">Argus {data.info.version}</div>}
       </footer>
 
       {selected && <CheckDrawer name={selected} now={now} sites={sites} csrf={session?.signed_in ? session.csrf : undefined}

@@ -23,7 +23,7 @@ Argus checks your services and pages you when one stops answering. A small compa
 # compose.yml
 services:
   argus:
-    image: ghcr.io/devinmb/argus:2
+    image: ghcr.io/devinmb/argus:1
     ports: ["8443:8080"]
     volumes: [argus-data:/data]
     cap_add: [NET_RAW]   # for ping checks

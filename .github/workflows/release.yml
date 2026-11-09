@@ -1,0 +1,67 @@
+# Cuts a release (decision 21): the next version from the newest v* tag, a tag
+# on main's head, then the build of that tag, which pushes 1.2.3, 1.2 and 1 and
+# publishes the release with notes from the merged pull requests.
+#
+#   patch  a fix or a dependency update (the Dependabot gate starts these)
+#   minor  something new
+#   major  something the owner has to act on (a change to compose.yml, say)
+#
+# A tag made with GITHUB_TOKEN starts no push workflow; dispatch is the
+# documented exception, so the build is started on the tag by hand.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "patch, minor or major"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: "Or an exact version, like 1.0.0 (the first release)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: release   # one at a time: two would pick the same number
+
+jobs:
+  tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Tag main and build it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP: ${{ inputs.bump }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          set -eu
+          last=$(gh api "repos/$GITHUB_REPOSITORY/tags?per_page=100" --jq '.[].name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+          if [ -n "$EXACT" ]; then
+            next=${EXACT#v}
+            echo "$next" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::$EXACT is not like 1.2.3"; exit 1; }
+          elif [ -z "$last" ]; then
+            echo "::error::no release yet: give the first one as version (1.0.0)"; exit 1
+          else
+            IFS=. read -r a b c <<< "$last"
+            case "$BUMP" in
+              major) next="$((a + 1)).0.0" ;;
+              minor) next="$a.$((b + 1)).0" ;;
+              *)     next="$a.$b.$((c + 1))" ;;
+            esac
+          fi
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ -n "$last" ] && [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/v$last" --jq .sha)" = "$sha" ]; then
+            echo "main is v$last already: nothing to release"; exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$next" -f sha="$sha" >/dev/null
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "v$next"
+          echo "### Tagged v$next on ${sha::7} (after v${last:-none}); its build publishes the release" >> "$GITHUB_STEP_SUMMARY"

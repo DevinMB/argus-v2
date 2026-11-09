@@ -1,4 +1,6 @@
-# Argus v2 design
+# Argus design
+
+_"v1" and "v2" below are generations of Argus built inside its author's homelab before it was released. The first public release is 1.0.0, from decision 21 on._
 
 Status: approved by Devin 2026-10-30, with the five decisions below as suggested. M0 and M1 are under way.
 
@@ -267,3 +269,8 @@ Decision 12, amended (Devin, 2026-11-07: "for things like this where I don't car
     - **The cache fix.** Each image's build cache is scoped to its job and the ISO week, so an `apt-get upgrade` or `apk upgrade` layer rebuilds at least weekly and images no longer overwrite each other's cache.
     - **Permissions.** The GitHub App stays read-only until the first pull request: then Argus links to the app's permission page (Contents, Pull requests and Workflows to Read and write) and the owner accepts the change on GitHub. Each click asks GitHub for an installation token for that one repo with only those permissions, used once and never kept. A pasted token works if it has the same permissions.
     Not chosen: copy-paste instructions (more steps for every repo); asking for write in the app manifest from the start (write on every repo before it is needed); a reusable workflow in the Argus repo called by `uses:` (every user's CI would run code from Argus's repo at `main`).
+21. **Version numbers, from 1.0.0** (Devin, 2026-11-09: "When we move to v3 finally at the end I think we need to start versioning our changes"; "I'd like the new repo to start on v1 versioning. This will be the first release to real people"). Every build said `2.0.0-dev` and Update Argus compared commits on main, so a user could not tell one Argus from another or choose when a change that needs them arrives.
+    - **Tags make releases.** `release.yml` (run by hand with patch, minor or major, or an exact first version) tags main's head `v1.2.3` and starts that tag's build, which pushes `:1.2.3`, `:1.2` and `:1` and then publishes a GitHub release with notes generated from the merged pull requests. Main's green builds push only `sha-<7>` and `:edge`, as version `dev`.
+    - **What each number means.** Patch: a fix or a dependency update; the Dependabot gate starts a patch release after each update it merges, so security fixes reach installs. Minor: something new. Major: something the owner must act on.
+    - **What Argus offers.** A released Argus reads the repo's releases (public, no GitHub connection): newer releases of its own major are offered on Update Argus, listed with their pull request titles; a newer major is only announced, with a link to its notes, because `:1` never pulls a 2.x and moving means editing compose.yml. An image pinned to one release (`:1.2.3`) is told it will not move on a pull. Development builds keep comparing commits on main. Companions report `1.2.3+<commit>`, so the stale-companion check is unchanged.
+    Not chosen: versions from pull request labels (one more thing to get right on every PR); a release per merge (Update Argus would nag on every docs change).

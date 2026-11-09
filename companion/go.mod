@@ -1,3 +1,3 @@
-module github.com/DevinMB/argus-next/companion
+module github.com/DevinMB/argus/companion
 
 go 1.27.3

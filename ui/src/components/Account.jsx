@@ -101,11 +101,28 @@ function ArgusVersion({ session }) {
     <div className="panel" id="version">
       <h2 className="eyebrow">Argus version</h2>
       <p>
-        Running build <span className="mono">{v.current.slice(0, 7)}</span>.{" "}
+        {v.released ? <>Running Argus <strong>{v.version}</strong>.</>
+          : <>Running a development build, <span className="mono">{v.current.slice(0, 7)}</span>.</>}{" "}
         {v.up_to_date ? <span className="st-up">Up to date.</span>
-          : v.behind > 0 ? <strong>{v.behind} change{v.behind === 1 ? "" : "s"} since this build.</strong>
+          : v.behind > 0 ? <strong>{v.released
+            ? `${v.latest} is out (${v.behind} release${v.behind === 1 ? "" : "s"} since yours).`
+            : `${v.behind} change${v.behind === 1 ? "" : "s"} since this build.`}</strong>
           : v.error ? <span className="muted">{v.error}.</span> : null}
       </p>
+      {v.major && (
+        <p className="small">
+          Argus {v.major} is out. A new major version can need something from you, so it does not
+          arrive by Update Argus: read <a href={`https://github.com/${v.repo}/releases/tag/v${v.major}`}
+          target="_blank" rel="noreferrer">its release notes</a>, then change the image in your compose.yml
+          to <code>:{v.major.split(".")[0]}</code>.
+        </p>
+      )}
+      {v.pinned && v.behind > 0 && (
+        <p className="small muted">
+          Your compose.yml pins <code>{v.image.split("/").pop()}</code>, so pulling gets the same release.
+          Use <code>:{v.version.split(".")[0]}</code> to get each new {v.version.split(".")[0]}.x release.
+        </p>
+      )}
       {v.changes.length > 0 && (
         <ul className="changes small">{v.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
       )}
@@ -113,7 +130,7 @@ function ArgusVersion({ session }) {
         <p className={`small ${u.state === "ok" ? "st-up" : busy ? "" : "st-failing"}`} role="status">
           {UPDATE[u.state]}{u.summary && !busy ? `: ${u.summary.replace(/^updated;\s*/i, "")}` : ""}</p>
       )}
-      {session?.signed_in && v.behind > 0 && !busy && (v.host ? (
+      {session?.signed_in && v.behind > 0 && !v.pinned && !busy && (v.host ? (
         <div className="actions">
           <button className="btn btn-primary" onClick={() => act("/api/argus/update")}>Update Argus</button>
           <span className="muted small">The companion on {v.host} pulls it and restarts Argus; if the new one is not healthy within 3 minutes, the old one comes back.</span>

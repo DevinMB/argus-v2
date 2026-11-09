@@ -18,7 +18,7 @@ import (
 )
 
 // Which packages an update would change, and for security updates why, from
-// the distro's own sources only (Devin: no outside services):
+// the distro's own sources only (no outside services):
 //   - apt: the dry run names each package, its installed and new version and
 //     its suite; the new version's changelog entry (apt-get changelog, from the
 //     distro's own changelog server) names the CVEs and the DSA, DLA or USN.
