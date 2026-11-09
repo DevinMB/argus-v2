@@ -17,7 +17,7 @@ import (
 )
 
 // Watching Argus (design decision 19). A stopped Argus cannot say it stopped,
-// so a host its owner picks watches it: `sudo argus-companion watch` stores a
+// so a host its owner picks watches it: `sudo /usr/local/bin/argus-companion watch` stores a
 // second Telegram bot's token on this host only (it never goes to Argus), and
 // the companion messages through it when Argus has not answered for 5 minutes,
 // when it answers again, and when Argus says its own alerts are not going out.
@@ -318,7 +318,7 @@ func (wt *Watcher) State() *WatchState {
 
 func watchHere(config, path string, args []string) int {
 	if os.Geteuid() != 0 {
-		fmt.Fprintln(os.Stderr, "run this as root: sudo argus-companion watch")
+		fmt.Fprintln(os.Stderr, "run this as root: sudo /usr/local/bin/argus-companion watch")
 		return 1
 	}
 	c, err := loadConfig(config)
@@ -341,7 +341,7 @@ func watchHere(config, path string, args []string) int {
 	case "--test":
 		w, err := loadWatch(path)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "this host does not watch Argus yet: run sudo argus-companion watch")
+			fmt.Fprintln(os.Stderr, "this host does not watch Argus yet: run sudo /usr/local/bin/argus-companion watch")
 			return 1
 		}
 		if err := newBot(w.Token).send(w.ChatID, fmt.Sprintf("Test from %s: this bot tells you if Argus (%s) stops answering. Nothing to do.", c.Name, c.URL)); err != nil {
@@ -352,7 +352,7 @@ func watchHere(config, path string, args []string) int {
 		return 0
 	case "":
 	default:
-		fmt.Fprintln(os.Stderr, "usage: sudo argus-companion watch [--off|--test]")
+		fmt.Fprintln(os.Stderr, "usage: sudo /usr/local/bin/argus-companion watch [--off|--test]")
 		return 2
 	}
 	in := bufio.NewReader(os.Stdin)
@@ -401,7 +401,7 @@ func watchHere(config, path string, args []string) int {
 		return 1
 	}
 	fmt.Printf("\n\nDone: %s watches Argus and told %s so on Telegram.\n", c.Name, who)
-	fmt.Println("Argus's Alerts page lists it within a minute. Stop with: sudo argus-companion watch --off")
+	fmt.Println("Argus's Alerts page lists it within a minute. Stop with: sudo /usr/local/bin/argus-companion watch --off")
 	return 0
 }
 

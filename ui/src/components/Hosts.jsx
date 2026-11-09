@@ -1056,7 +1056,7 @@ function HostActions({ host, session, reload, hosts, updateCommand }) {
       {mode === "remove" && (
         <span className="inline-form small">
           Forget {host.name} without uninstalling, for a host that is gone? Its token stops working at once. If the
-          program is still on it, run <code>sudo argus-companion uninstall</code> there{host.read_only ? "" : ", or use Uninstall instead"}.
+          program is still on it, run <code>sudo /usr/local/bin/argus-companion uninstall</code> there{host.read_only ? "" : ", or use Uninstall instead"}.
           <button className="btn btn-small" onClick={remove}>Remove</button>
           <button className="btn btn-small" onClick={() => setMode(null)}>Keep</button>
         </span>

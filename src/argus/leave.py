@@ -54,8 +54,8 @@ def outside(settings: Settings, watchers: list[dict] | None = None) -> list[dict
     for bot in sorted({w["bot"] for w in watchers or [] if w.get("bot")}):
         hosts = ", ".join(w["name"] for w in watchers or [] if w.get("bot") == bot)
         out.append({"key": f"watchdog:{bot}", "title": f"The watchdog bot @{bot}",
-                    "how": f"{hosts} watch Argus with it. Uninstalling a host stops it; on a host "
-                           "you keep, run sudo argus-companion watch --off first, or it tells you "
-                           "Argus stopped. Then send @BotFather /deletebot.",
+                    "how": f"{hosts} watch Argus with it. Uninstalling a host stops it; on a "
+                           "host you keep, run sudo /usr/local/bin/argus-companion watch --off "
+                           "first, or it tells you Argus stopped. Then send @BotFather /deletebot.",
                     "url": "https://t.me/BotFather"})
     return out

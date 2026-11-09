@@ -19,7 +19,7 @@ PENDING = "companion.uninstall"  # {cid: {"name", "at", "state", "log"}}
 DONE = "companion.uninstalled"  # the newest finished ones, for the Hosts page
 STALE = 15 * 60
 KEEP = 10
-COMMAND = "sudo argus-companion uninstall"
+COMMAND = "sudo /usr/local/bin/argus-companion uninstall"
 
 
 class Uninstalls:
