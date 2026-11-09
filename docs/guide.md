@@ -53,9 +53,10 @@ Where the file lives (Config page):
 
 On **Updates**, press **Connect GitHub**. Argus makes its own GitHub App on your account (or an organization) with GitHub's app-manifest flow: confirm on GitHub, then choose the repos it may see. Updates then shows each repo's pipeline: Dependabot's PRs, CI, the merge, the build and its Trivy scan. Majors are spotted from Dependabot's titles and wait for you.
 
-- Read-only permissions. The app's private key is kept encrypted in Argus and never shown.
+- Read-only permissions, until you add the pipeline to a repo (below). The app's private key is kept encrypted in Argus and never shown.
 - Argus polls GitHub every minute with conditional requests (a 304 costs no rate limit), so nothing needs to reach Argus from the internet.
 - Cannot make apps? Paste a fine-grained read-only token on the GitHub page instead.
+- **No CI yet?** Open a repo on Updates and press **Add the pipeline**. Argus reads the repo's Dockerfiles and shows what a pull request would add: `.github/workflows/ci.yml` (each image built, tested inside the image, started when it has a `HEALTHCHECK`, scanned with Trivy; Dependabot's patch and minor updates merged on green, majors labelled `waits-for-you`; each image pushed to GHCR as `sha-<7>` from the default branch) and, when the repo has none, `.github/dependabot.yml`. Edit the image names and test commands, then **Open the pull request**; you merge it on GitHub. The first time, Argus links you to the app's permissions on GitHub: set Contents, Pull requests and Workflows to Read and write, and accept the change. Each pull request then uses a key for that one repo, kept for nothing else. A repo with a `ci.yml` Argus did not write is left alone.
 - Archived repos are skipped; hide others on the GitHub page. In `argus.yml`, `repos:` can link a repo to its check (`{name: shop, check: web}`).
 
 ## Add a host

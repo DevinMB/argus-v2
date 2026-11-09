@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Pipeline from "./Pipeline.jsx";
 import Track from "./Track.jsx";
 import {
   STAGES, isAuto, agoText, lifecycle, lifecycleHeadline, recentMerges, safeHref, tidyTitle,
@@ -9,7 +10,7 @@ const GROUPS = [
   ["you", "Needs you", "A person has to act before these move again."],
   ["moving", "On the way", "The pipeline is working on these; nothing to do."],
   ["done", "Up to date", "Running their newest change."],
-  ["untracked", "Not tracked", "No CI runs on the default branch, so there is nothing to follow."],
+  ["untracked", "Not tracked", "No CI runs on the default branch, so there is nothing to follow. Open one to add Argus's pipeline."],
 ];
 
 function Link({ href, className, children }) {
@@ -53,7 +54,7 @@ function Board({ rows }) {
   );
 }
 
-function Details({ repo, now }) {
+function Details({ repo, now, csrf }) {
   const byGate = repo.merged.filter((m) => isAuto(m.by)).length;
   return (
     <div className="app-more">
@@ -87,6 +88,7 @@ function Details({ repo, now }) {
           </ul>
         </>
       )}
+      {repo.owner && <Pipeline repo={repo} csrf={csrf} />}
       <p className="app-facts">
         <Link href={repo.url}>{repo.name} on GitHub</Link>
         {repo.main && <span className="mono">sha-{repo.main.sha}</span>}
@@ -105,7 +107,7 @@ const lastChange = (repo) => {
 
 // One app as a row: its state in words, when it last changed, and the full
 // track when opened.
-function AppRow({ repo, state, now, open, onToggle, grouped }) {
+function AppRow({ repo, state, now, open, onToggle, grouped, csrf }) {
   // When it went live if we know, else when its newest change merged.
   const when = state.deployedAt ? `deployed ${agoText(now - state.deployedAt)}`
     : repo.main?.started_at ? `merged ${agoText(now - repo.main.started_at)}` : "";
@@ -123,7 +125,7 @@ function AppRow({ repo, state, now, open, onToggle, grouped }) {
           {when}
         </span>
       </button>
-      {open && <Details repo={repo} now={now} />}
+      {open && <Details repo={repo} now={now} csrf={csrf} />}
     </li>
   );
 }
@@ -151,7 +153,7 @@ function Recent({ repos, now }) {
 
 // Per app: where its newest change is on the way to production, in words.
 // Data is polled from GitHub by Argus. #/updates/<repo> opens one app.
-export default function Updates({ updates, now, focus }) {
+export default function Updates({ updates, now, focus, csrf }) {
   const [opened, setOpened] = useState(() => new Set(focus ? [focus] : []));
   const [lastFocus, setLastFocus] = useState(focus);
   if (focus !== lastFocus) {
@@ -215,7 +217,7 @@ export default function Updates({ updates, now, focus }) {
             <ul className="apps">
               {list.map(({ repo, state }) => (
                 <AppRow key={repo.name} repo={repo} state={state} now={now} grouped={key === "done" && state.label === "Up to date"}
-                        open={opened.has(repo.name)} onToggle={() => toggle(repo.name)} />
+                        open={opened.has(repo.name)} onToggle={() => toggle(repo.name)} csrf={csrf} />
               ))}
             </ul>
           </section>

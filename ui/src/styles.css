@@ -982,3 +982,17 @@ button.ctable-row:hover { background: var(--raise); }
 .pkgs .why a:hover { text-decoration: underline; }
 .pkgs li { grid-template-columns: minmax(0, 1fr) auto; }
 .pkgs li > .row-act { display: none; }
+
+/* The pipeline on an app's details (decision 20) */
+.pipe { margin: 14px 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.pipe p { margin: 4px 0 10px; }
+.pipe-plan { display: grid; gap: 10px; }
+.pipe-images { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.pipe-images li { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.pipe-images .field { margin: 0; }
+.pipe-notes { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.pipe-file pre { max-height: 360px; overflow: auto; margin-top: 6px; }
+.pipe-file summary { cursor: pointer; color: var(--muted); }
+.pipe-file summary:hover { color: var(--accent); }
+.pipe-perm p { margin: 0 0 8px; }
+.pipe .actions { display: flex; gap: 8px; flex-wrap: wrap; }

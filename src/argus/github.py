@@ -27,6 +27,7 @@ from typing import Any
 
 import httpx
 
+from argus import pipeline
 from argus.config import GitHub, Repo
 from argus.ghauth import REDISCOVER, Credentials, StaticToken
 
@@ -35,7 +36,7 @@ log = logging.getLogger("argus.github")
 API = "https://api.github.com"
 GATE = "github-actions[bot]"  # the Dependabot merge gate merges as this
 DEPENDABOT = "dependabot[bot]"
-WAITS = "waits-for-devin"  # DevinMB/workflows' gate labels majors so
+WAITS = {"waits-for-devin", "waits-for-you"}  # the gate labels majors (old name, Argus's)
 AUTO = {GATE, DEPENDABOT}  # merged by a bot: auto-merge
 DEFAULT_POLL = 60
 VERSIONS = re.compile(r"\bfrom v?(\d+)(?:\.(\d+))?\S* to v?(\d+)(?:\.(\d+))?")
@@ -254,6 +255,12 @@ class Poller:
         # 403 too: Dependabot alerts off, or not readable with this token.
         alerts = await self._get(f"{base}/dependabot/alerts", missing=(403, 404),
                                  state="open", per_page=100)
+        # Which pipeline builds it (decision 20); the ETag makes a re-read free.
+        pipe = {"kind": "none", "version": None}
+        if has_ci:
+            f = await self._get(f"{base}/contents/.github/workflows/ci.yml", ref=t.branch)
+            text = base64.b64decode((f or {}).get("content", "")).decode(errors="replace")
+            pipe = {"kind": pipeline.kind_of(text), "version": pipeline.version_of(text)}
         now = self.clock()
         merged = [p for p in closed if p["merged_at"] and now - ts(p["merged_at"]) < MERGED_WINDOW]
         for p in merged:
@@ -284,6 +291,8 @@ class Poller:
             ],
             "stack": await self._stack(gh, repo, hosts) if gh and repo.stack else None,
             "dependabot": dependabot_runs((dyn or {}).get("workflow_runs", [])),
+            "pipeline": pipe,
+            "owner": t.owner, "repo": repo.name,
         }
 
     async def _merger(self, base: str, repo: str, number: int) -> str | None:
@@ -329,7 +338,7 @@ class Poller:
         return {"number": pr["number"], "title": pr["title"], "url": pr["html_url"],
                 "created_at": ts(pr["created_at"]), "ci": ci,
                 "waits_for_you": is_major(pr["title"])
-                or any(label["name"] == WAITS for label in pr["labels"])}
+                or any(label["name"] in WAITS for label in pr["labels"])}
 
     async def _stack(self, gh: GitHub, repo: Repo, hosts: dict[str, str]) -> dict:
         path = f"{repo.stack}/compose.yml"
