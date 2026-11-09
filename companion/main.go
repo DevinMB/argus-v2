@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -49,7 +50,7 @@ func main() {
 	case "uninstall":
 		os.Exit(uninstallHere())
 	case "watch":
-		os.Exit(watchHere(defaultConfig, watchFile, args))
+		os.Exit(watchHere(defaultConfig, watchFile, filepath.Join(defaultState, argusBotName), args))
 	case "enroll":
 		url := fs.String("url", "", "Argus's address, e.g. https://argus.lan:8443")
 		pin := fs.String("pin", "", "SHA-256 of Argus's TLS public key (from Add a host)")
@@ -191,6 +192,7 @@ func run(ctx context.Context, c *Config, deployer *Deployer, stateDir string) {
 			return
 		}
 		watcher.Heard(reply.Watch)
+		rememberArgusBot(filepath.Join(stateDir, argusBotName), reply.ArgusBot)
 		checker.Set(reply.Checks)
 		if reply.ReportEvery >= 10 {
 			every = time.Duration(reply.ReportEvery) * time.Second

@@ -205,9 +205,13 @@ class Alerter:
 
     # --- who watches Argus (decision 19) ---
 
+    def bot_id(self) -> str:
+        """The numeric ID of the bot Argus alerts with: public, unlike the token."""
+        return (self.settings.secret(TOKEN) or "").split(":")[0]
+
     def watchers(self) -> list[dict]:
         """Hosts that watch Argus with their own bot (sudo argus-companion watch)."""
-        own = (self.settings.secret(TOKEN) or "").split(":")[0]
+        own = self.bot_id()
         out = []
         for v in self.rt.companions.views():
             w = (v.get("report") or {}).get("watch")

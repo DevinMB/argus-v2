@@ -1593,6 +1593,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
             body["argus_update"] = upd
         if not row["read_only"] and rep.proxmox and (todo := gi.to_send(row["name"])):
             body["guest_installs"] = todo
+        if bot := request.app.state.alerter.bot_id():
+            body["argus_bot"] = bot  # so "argus-companion watch" can refuse Argus's own bot
         if rep.watch is not None:
             # Even a monitoring-only host may watch: the bot is its owner's, not Argus's.
             upd = su.state()

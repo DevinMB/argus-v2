@@ -190,6 +190,9 @@ type Reply struct {
 	Uninstall bool `json:"uninstall"`
 	// To a host that watches Argus (decision 19).
 	Watch *WatchSaid `json:"watch"`
+	// The numeric ID of the bot Argus alerts with (public, never the token), so
+	// "argus-companion watch" can refuse it.
+	ArgusBot string `json:"argus_bot"`
 }
 
 // Build is the companion Argus serves for this host's CPU.
