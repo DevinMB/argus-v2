@@ -255,7 +255,19 @@ function Watcher({ view, act, busy, say, hosts, argusHost }) {
         A stopped Argus cannot tell you it stopped. Let a host or two watch it: each one messages you
         through its own Telegram bot when Argus has not answered for 5 minutes, and again when it is back.
       </p>
-      {!view.watched_by && <p className="banner banner-warn">Nothing watches Argus yet.</p>}
+      {!view.watched_by && (watchers.some((x) => x.same_bot) ? (
+        <div className="banner banner-warn">
+          <p>
+            {watchers.filter((x) => x.same_bot).map((x) => x.name).join(", ")} is set up with
+            Argus's own Telegram bot, so it does not count yet. If Telegram blocks that bot or its token
+            changes, Argus's alerts and the "Argus is down" message would go quiet together.
+          </p>
+          <p>
+            Make a second bot: message @BotFather, send /newbot, send the new bot any message, then run the
+            watch command on the host again and paste the new token.
+          </p>
+        </div>
+      ) : <p className="banner banner-warn">Nothing watches Argus yet.</p>)}
       {allHome && (
         <p className="banner banner-warn">
           Every watcher runs on {home}, the machine Argus runs on: if it stops, nobody tells you.
@@ -266,7 +278,7 @@ function Watcher({ view, act, busy, say, hosts, argusHost }) {
         <ul className="watchers">
           {watchers.map((x) => {
             const tone = x.same_bot || x.error || x.status !== "ok" ? "down" : "up";
-            const line = x.same_bot ? "watches with Argus's own bot: make a second bot and run the command again"
+            const line = x.same_bot ? "uses Argus's own bot, so it does not count"
               : x.status !== "ok" ? "this host has gone quiet, so it is not watching"
               : x.error ? `cannot reach Telegram: ${x.error}`
               : x.checked_at ? `Telegram answered ${since(view, x.checked_at)}` : "checking Telegram";
