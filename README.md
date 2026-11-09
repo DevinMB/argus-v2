@@ -15,7 +15,7 @@ Argus checks your services and pages you when one stops answering. A small compa
 - **Follows your apps' updates** on GitHub: Dependabot's PRs, CI, merges and builds, to "running on its host".
 - **Guides you in.** A new install opens on a short checklist that takes you from nothing to your first host watched, patched and deploying.
 
-![Hosts: each with its containers, disks, stacks and patch window](docs/screenshots/hosts.png)
+![Hosts: what needs a look on each, and when it is patched](docs/screenshots/hosts.png)
 
 ## Quick start
 

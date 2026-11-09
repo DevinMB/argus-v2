@@ -17,6 +17,7 @@ import json
 import secrets
 import ssl
 import time
+import urllib.error
 import urllib.request
 
 CONFIG = """\
@@ -100,8 +101,11 @@ class Client:
                                      data=json.dumps(body).encode() if body is not None else None,
                                      headers={"Content-Type": "application/json",
                                               "X-CSRF-Token": self.csrf, **(headers or {})})
-        with self.opener.open(req, timeout=20) as r:
-            raw = r.read()
+        try:
+            with self.opener.open(req, timeout=20) as r:
+                raw = r.read()
+        except urllib.error.HTTPError as e:
+            raise SystemExit(f"{method} {path}: HTTP {e.code} {e.read().decode()[:300]}") from None
         return json.loads(raw) if raw else None
 
 
@@ -155,7 +159,8 @@ def main() -> None:
     c.call("PUT", "/api/patching/nas", {
         "enabled": True, "day": 1, "time": "03:00",
         "backup": "job:nas-backup", "restore": "job:restore-test"})
-    c.call("PUT", "/api/patching/pi", {"enabled": True, "day": 3, "time": "04:00"})
+    c.call("PUT", "/api/patching/pi", {"enabled": True, "day": 3, "time": "04:00",
+                                       "level": "security", "reboot": False, "no_backup": True})
     now = time.time()
     c.call("POST", "/job/nas-backup", {
         "result": "ok", "started": now - 2 * 86400 - 1500, "finished": now - 2 * 86400,
