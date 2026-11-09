@@ -3,7 +3,8 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:   # the Dependabot gate starts the main build this way
+    tags: ["v*"]       # a release (decision 21); release.yml makes the tag
+  workflow_dispatch:   # the gate and release.yml start builds this way
 # Actions are pinned to commit SHAs: tags can be moved or deleted (trivy-action's were).
 permissions:
   contents: read
@@ -27,7 +28,15 @@ jobs:
       packages: write   # push to GHCR on main
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: docker build -t argus:ci --build-arg COMMIT=${{ github.sha }} .
+      - name: Build
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          # A release tag (v1.2.3) names the version; every other build is "dev".
+          version=dev
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then version=${GITHUB_REF_NAME#v}; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          docker build -t argus:ci --build-arg COMMIT="$COMMIT" --build-arg VERSION="$version" .
       - name: Trivy (fail on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -210,20 +219,46 @@ jobs:
           jq -e '.companions[] | select(.name == "alpine") | .status == "ok" and .report.updates.manager == "apk"' hosts.json \
             || { docker exec alpine rc-service argus-companion status; jq '.companions' hosts.json; exit 1; }
           docker exec alpine rc-service argus-companion status
-      # main only, and only in the published repo (forks and the pre-launch
-      # name build but do not push): what passed every step above is what
-      # people pull. :2 follows the newest build of major version 2.
+      # Only in the published repo (forks build but do not push), and only what
+      # passed every step above. main: sha-<7> and :edge. A release: 1.2.3, 1.2
+      # and 1, which is what people run, plus sha-<7>.
       - name: Push to GHCR
         if: >-
-          github.repository == 'DevinMB/argus' && github.ref == 'refs/heads/main'
+          github.repository == 'DevinMB/argus'
+          && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
           && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE: ghcr.io/devinmb/argus
         run: |
+          set -eu
+          tags="sha-${GITHUB_SHA::7}"
+          if [ "$VERSION" = dev ]; then
+            [ "$GITHUB_REF" = refs/heads/main ] && tags="$tags edge"
+          else
+            tags="$tags $VERSION ${VERSION%.*} ${VERSION%%.*}"
+          fi
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          for t in "sha-${GITHUB_SHA::7}" 2; do docker tag argus:ci "$IMAGE:$t"; docker push -q "$IMAGE:$t"; done
-          echo "### Pushed $IMAGE:sha-${GITHUB_SHA::7} and :2" >> "$GITHUB_STEP_SUMMARY"
+          for t in $tags; do docker tag argus:ci "$IMAGE:$t"; docker push -q "$IMAGE:$t"; done
+          echo "### Pushed $IMAGE: $tags" >> "$GITHUB_STEP_SUMMARY"
+
+  # A release's notes, from the pull requests merged since the last one. Only
+  # after its images are pushed, so a release never names an image that is missing.
+  release:
+    needs: image
+    if: >-
+      github.repository == 'DevinMB/argus' && startsWith(github.ref, 'refs/tags/v')
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
 
   # The Dependabot gate, after everything above passes: patch and minor updates
   # merge, then ci.yml runs on main (a merge made with GITHUB_TOKEN starts no
@@ -251,6 +286,8 @@ jobs:
           set -eu
           gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --merge --delete-branch
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main
+          # A dependency update people should get: a patch release (decision 21).
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f bump=patch
           echo "### Merged #$PR ($UPDATE) and started the main build" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Majors wait for you

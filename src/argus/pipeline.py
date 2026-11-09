@@ -76,7 +76,7 @@ class Plan:
 
 def kind_of(ci: str | None) -> str:
     """What a repo's ci.yml is: none, argus (ours), shared (calls a shared
-    app-ci.yml, as DevinMB/workflows' callers do) or own (anything else)."""
+    app-ci.yml, a shared reusable workflow) or own (anything else)."""
     if ci is None:
         return "none"
     if ci.startswith(MARK):

@@ -2,7 +2,7 @@
 # https://<this machine>:8443 with the setup code from `docker compose logs argus`.
 services:
   argus:
-    image: ghcr.io/devinmb/argus:2
+    image: ghcr.io/devinmb/argus:1
     ports: ["8443:8080"]
     volumes:
       - argus-data:/data          # the database and the key to its secrets: back it up

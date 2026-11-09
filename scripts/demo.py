@@ -114,7 +114,7 @@ def report(c: Client, token: str, name: str, h: dict) -> None:
     pending, security = h["updates"]
     now = time.localtime()
     c.call("POST", "/companion/report", {
-        "nonce": secrets.token_urlsafe(16), "version": "2.0.0", "hostname": name,
+        "nonce": secrets.token_urlsafe(16), "version": "1.0.0+demo", "hostname": name,
         "os": h["os"], "kernel": h["kernel"], "arch": h.get("arch", "amd64"),
         "uptime": 3 * 86400, "containers": containers, "failed_units": h["units"],
         "disks": [{"mount": m, "total": int(t * GB), "used": int(u * GB)}

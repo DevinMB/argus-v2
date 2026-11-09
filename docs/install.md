@@ -55,27 +55,47 @@ On a Proxmox server, Argus lists the guests in the list under the server. **Add 
 
 A host is named after its hostname. When that name is no good (two Proxmox servers both called `pve`, a VM that calls itself `localhost`), use **Rename** on its page. Its patch schedule and history come along, and nothing changes on the host. Deploys follow the new name: Argus sends it the stacks listed in `hosts/<new name>`.
 
-### Remove a companion
+### Uninstall a host
 
-Remove the host on its card first (its token stops working at once), then on the host:
+On the host's page, press **Uninstall** and enter the admin password twice. On its next report the companion hands back every stack Argus created as a plain Compose folder in `/opt/stacks/<name>`, with its `.env`, leaving the running containers alone. Then it removes itself: the service, `/usr/local/bin/argus-companion`, `/etc/argus-companion` and `/var/lib/argus-companion`. Argus forgets the host once the companion reports that it is done. Stacks Argus took over in place were never moved and stay where they are.
+
+A host that is offline gets the command to run on it instead:
 
 ```bash
-sudo systemctl disable --now argus-companion
-sudo rm -rf /usr/local/bin/argus-companion /etc/argus-companion /etc/systemd/system/argus-companion.service
-sudo systemctl daemon-reload
+sudo /usr/local/bin/argus-companion uninstall
 ```
 
-On OpenRC (Alpine): `rc-service argus-companion stop; rc-update del argus-companion; rm -rf /usr/local/bin/argus-companion /etc/argus-companion /etc/init.d/argus-companion`.
+**Remove** only forgets the host (its token stops working at once) and is for a host that is gone for good.
 
-Stacks it deployed keep running; their folders under `/var/lib/argus-companion/stacks` are yours to keep or delete. Adopted stacks were never moved.
+Add the host again later and its handed-back stacks are taken over where they are. It joins as a new host, without its old patch plan.
+
+## Remove Argus
+
+**Settings, Leave Argus** walks through it:
+
+1. Export a backup, in case you come back.
+2. Uninstall every companion at once (the admin password twice), as above.
+3. A checklist of what lives outside Argus, with a link for each: the GitHub App, the deploy repo's Dependabot file and write token, the Telegram bots. Argus deletes nothing outside itself.
+
+Last, beside Argus's compose.yml:
+
+```bash
+docker compose down -v
+```
+
+`-v` removes Argus's data volume, which holds its settings and secrets.
 
 ## Upgrade
 
-**Settings, Account, Argus version** shows what changed since the build you run. When Argus's own machine runs a companion (add it as a host), **Update Argus** has that companion pull the new image and restart Argus; if the new Argus is not healthy within three minutes, the old one comes back. The header shows **Update available** when there is something new. Without a companion there, run this beside Argus's compose.yml:
+Argus has version numbers (`1.4.2`): a patch release fixes something or updates a dependency, a minor release adds something, and a major release needs something from you, said in its release notes. The image tag `:1` follows every 1.x release; `:1.4` and `:1.4.2` stay put.
+
+**Settings, Account, Argus version** shows the release you run and what changed in the newer ones. When Argus's own machine runs a companion (add it as a host), **Update Argus** has that companion pull the new image and restart Argus; if the new Argus is not healthy within three minutes, the old one comes back. The header shows **Update available** when there is something new. Without a companion there, run this beside Argus's compose.yml:
 
 ```bash
 docker compose pull && docker compose up -d
 ```
+
+A new major version is never pulled for you: the version panel says when one is out, and you move to it by changing the tag in compose.yml (`:2`) after reading its notes.
 
 Companions upgrade themselves: when Argus serves a different companion build, each host downloads it from Argus over its pinned connection, checks it against the sha256 in Argus's signed reply, installs it and restarts, within a minute or two. Not on a monitoring-only host, and not where the host's policy says `"manual_updates": true`; those, and companions from before self-update, are upgraded with **Reinstall companion** on the host's page: a Proxmox guest's server does it for you, and for any other host the page shows the command to paste (Add a host's, without a code, which keeps the enrollment). A companion that has not caught up with Argus for three hours is marked **companion out of date**, with the same button.
 

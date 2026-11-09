@@ -12,10 +12,11 @@ FROM golang:1.27.3-alpine AS companion
 WORKDIR /src
 COPY companion/ ./
 ARG COMMIT=unknown
+ARG VERSION=dev
 RUN test -z "$(gofmt -l .)" && go vet ./... && CGO_ENABLED=0 go test ./... \
  && for arch in amd64 arm64; do \
       CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
-        -ldflags "-s -w -X main.version=2.0.0-dev+$(echo $COMMIT | cut -c1-12)" -o /out/argus-companion-linux-$arch . ; \
+        -ldflags "-s -w -X main.version=$VERSION+$(echo $COMMIT | cut -c1-12)" -o /out/argus-companion-linux-$arch . ; \
     done
 
 FROM python:3.15.0-slim-trixie
@@ -41,7 +42,9 @@ COPY --from=ui /ui/dist ui/dist/
 COPY --from=companion /out/ companion/
 
 ARG COMMIT=unknown
-ENV ARGUS_COMMIT=$COMMIT ARGUS_VERSION=2.0.0-dev PYTHONPATH=/app/src PYTHONUNBUFFERED=1 \
+# 1.2.3 for a release (from its tag), dev for any other build (decision 21).
+ARG VERSION=dev
+ENV ARGUS_COMMIT=$COMMIT ARGUS_VERSION=$VERSION PYTHONPATH=/app/src PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s CMD ["python", "-m", "argus", "healthcheck"]
