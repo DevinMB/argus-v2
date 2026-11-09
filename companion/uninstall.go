@@ -146,7 +146,7 @@ func (u *Uninstaller) Remove() (string, error) {
 // Argus cannot reach, or after Remove in Argus.
 func uninstallHere() int {
 	if os.Geteuid() != 0 {
-		fmt.Fprintln(os.Stderr, "run this as root: sudo argus-companion uninstall")
+		fmt.Fprintln(os.Stderr, "run this as root: sudo /usr/local/bin/argus-companion uninstall")
 		return 1
 	}
 	for _, s := range []string{handBackScript, removalScript} {

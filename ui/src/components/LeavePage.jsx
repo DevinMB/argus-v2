@@ -6,7 +6,7 @@ import { agoText } from "../lib.js";
 // companion uninstalled with its stacks handed back, then what lives outside
 // Argus, for the owner to remove or keep. Argus deletes nothing outside itself.
 function HostState({ h }) {
-  if (h.read_only) return <span className="small muted">monitoring only: run <code>sudo argus-companion uninstall</code> on it, then Remove</span>;
+  if (h.read_only) return <span className="small muted">monitoring only: run <code>sudo /usr/local/bin/argus-companion uninstall</code> on it, then Remove</span>;
   const u = h.uninstall;
   if (!u) return <span className="small muted">still installed</span>;
   if (u.state === "failed") return <span className="small st-failing">handback failed: {u.log || "see its page"}</span>;

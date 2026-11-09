@@ -58,6 +58,7 @@ from argus.runtime import Runtime
 from argus.selfupdate import SelfUpdate
 from argus.settings import Settings, load_key
 from argus.sniff import Sniffer
+from argus.uninstalls import COMMAND as UNINSTALL_COMMAND
 from argus.uninstalls import Uninstalls
 
 # While Argus updates itself, watchers expect silence this long from the request.
@@ -1303,8 +1304,8 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         if row is None:
             raise HTTPException(404, "no such host")
         if row["read_only"]:
-            raise HTTPException(409, "a monitoring-only host is not Argus's to change: "
-                                     "run sudo argus-companion uninstall on it, then Remove")
+            raise HTTPException(409, "a monitoring-only host is not Argus's to change: run "
+                                     f"{UNINSTALL_COMMAND} on it, then Remove")
         return request.app.state.uninstalls.request(cid, row["name"])
 
     @app.post("/api/companions/uninstall")

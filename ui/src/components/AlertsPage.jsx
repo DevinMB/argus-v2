@@ -301,13 +301,13 @@ function Watcher({ view, act, busy, say, hosts, argusHost }) {
           <li>In Telegram, ask <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a> for
             a new bot (<code>/newbot</code>). Use a second bot, not the one Argus sends its alerts with.</li>
           <li>On a host on another machine than Argus{home ? ` (not ${home})` : ""}, run:
-            <span className="field-row cmd"><code>sudo argus-companion watch</code><Copy text="sudo argus-companion watch" /></span>
+            <span className="field-row cmd"><code>sudo /usr/local/bin/argus-companion watch</code><Copy text="sudo /usr/local/bin/argus-companion watch" /></span>
           </li>
           <li>Paste the bot&apos;s token when it asks, then send the bot a message. The host shows up here within a minute.</li>
         </ol>
         <p className="muted small">
           The token stays on that host: Argus never sees it. A monitoring-only host can watch too.
-          To stop: <code>sudo argus-companion watch --off</code>.
+          To stop: <code>sudo /usr/local/bin/argus-companion watch --off</code>.
         </p>
       </details>
       <details className="watch-add" open={other && watchers.length === 0}>
