@@ -18,7 +18,10 @@ export async function send(method, path, body, csrf) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(errorText(data.detail) || httpText(r.status)), { status: r.status });
+  if (!r.ok) {
+    const text = data.detail?.why ?? errorText(data.detail);
+    throw Object.assign(new Error(text || httpText(r.status)), { status: r.status, detail: data.detail });
+  }
   return data;
 }
 

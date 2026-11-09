@@ -54,6 +54,15 @@ PERMISSIONS = {"contents": "read", "pull_requests": "read", "actions": "read",
                "vulnerability_alerts": "read", "metadata": "read", "packages": "read"}
 
 
+# Opening the pipeline pull request (decision 20): asked of GitHub per click,
+# for that one repo, and never kept.
+PIPELINE_WRITE = {"contents": "write", "pull_requests": "write", "workflows": "write"}
+
+
+class NeedsPermission(Exception):
+    """The GitHub App has not been given the write permissions yet."""
+
+
 class Credentials(Protocol):
     async def token_for(self, owner: str | None) -> str | None: ...
     async def repos(self) -> list[dict]: ...
@@ -89,6 +98,9 @@ class StaticToken:
 
     async def token_for(self, owner: str | None) -> str | None:
         return self._token
+
+    async def write_token(self, owner: str, repo: str) -> str:
+        return self._token  # whether it may write is GitHub's answer, per request
 
     async def repos(self) -> list[dict]:
         # Yours and your organizations': not every repo you were once invited to.
@@ -161,6 +173,22 @@ class AppCredentials:
         r.raise_for_status()
         self._tokens[key] = (r.json()["token"], self.clock() + 3600)
         return self._tokens[key][0]
+
+    async def write_token(self, owner: str, repo: str) -> str:
+        """A token that can write to one repo only, for one pull request. GitHub
+        refuses it until the owner has given the app those permissions."""
+        installs = await self._list(force=True)
+        match = [i for i in installs if i["account"].lower() == owner.lower()]
+        if not match:
+            raise NeedsPermission(f"the GitHub App is not installed on {owner}")
+        r = await self.client.post(
+            f"{API}/app/installations/{match[0]['id']}/access_tokens",
+            headers={**HEADERS, "Authorization": f"Bearer {self.jwt()}"},
+            json={"repositories": [repo], "permissions": PIPELINE_WRITE})
+        if r.status_code == 422:
+            raise NeedsPermission("the GitHub App may not write to repos yet")
+        r.raise_for_status()
+        return r.json()["token"]
 
     async def token_for(self, owner: str | None) -> str | None:
         installs = await self._list()

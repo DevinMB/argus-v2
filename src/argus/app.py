@@ -36,7 +36,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from argus import backup, configsrc, ghauth, github, leave, start
+from argus import backup, configsrc, ghauth, github, leave, pipeline, start
 from argus.adopt import Adoption
 from argus.alerts import (
     ALERTMANAGER_EXAMPLE,
@@ -179,6 +179,18 @@ class AlertSettings(BaseModel):
     watch_elsewhere: str | None = Field(None, max_length=120)
 
     _urls = field_validator("link", "watch_url")(_http_url)
+
+
+class PipelineImage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    job: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    image: str = Field("", max_length=200, pattern=r"^$|^ghcr\.io/[a-z0-9._/-]{1,180}$")
+    test_command: str | None = Field(None, max_length=300)
+
+
+class PipelineEdits(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    images: list[PipelineImage] = Field([], max_length=20)
 
 
 class Switch(BaseModel):
@@ -826,6 +838,71 @@ def create_app(runtime: Runtime | None = None, start_scheduler: bool = True,
         request.app.state.settings.set("github.connect_error", None)
         return ghauth.manifest(request.app.state.settings, body.url, body.name, body.org,
                                rt(request).clock)
+
+    # --- The app pipeline (decision 20): one pull request per repo ---
+
+    def pipeline_repo(request: Request, owner: str, repo: str) -> dict:
+        gh = request.app.state.gh
+        if not gh.connected:
+            raise HTTPException(409, "connect GitHub first")
+        found = next((x for x in gh.found or [] if x["owner"].lower() == owner.lower()
+                      and x["name"].lower() == repo.lower()), None)
+        if found is None:
+            raise HTTPException(404, f"Argus cannot see {owner}/{repo} on GitHub")
+        return found
+
+    async def pipeline_plan(request: Request, r: dict, token: str,
+                            edits: list[dict] | None = None) -> pipeline.Plan:
+        try:
+            got = await pipeline.read_repo(request.app.state.gh_client, token, r["owner"],
+                                           r["name"], r["default_branch"])
+        except pipeline.GitHubError as e:
+            raise HTTPException(502, str(e)) from None
+        return pipeline.plan(r["owner"], r["name"], r["default_branch"], got["paths"],
+                             got["texts"], got["ci"], got["has_dependabot"], edits)
+
+    @app.get("/api/github/pipeline/{owner}/{repo}")
+    async def pipeline_preview(owner: str, repo: str, request: Request, _: Admin) -> dict:
+        """What the pull request would add, for the owner to look over first."""
+        r = pipeline_repo(request, owner, repo)
+        token = await request.app.state.gh.creds.token_for(r["owner"])
+        if not token:
+            raise HTTPException(409, "the GitHub App is not installed on " + r["owner"])
+        return {**(await pipeline_plan(request, r, token)).view(),
+                "repo": r["full_name"], "branch": r["default_branch"]}
+
+    @app.post("/api/github/pipeline/{owner}/{repo}")
+    async def pipeline_open(owner: str, repo: str, body: PipelineEdits, request: Request,
+                            _: Admin) -> dict:
+        """Open the pull request. Argus never merges it: the owner does."""
+        r = pipeline_repo(request, owner, repo)
+        creds = request.app.state.gh.creds
+        try:
+            token = await creds.write_token(r["owner"], r["name"])
+        except ghauth.NeedsPermission as e:
+            app_info = creds.describe().get("app") or {}
+            raise HTTPException(409, {
+                "needs_permission": True, "why": str(e),
+                "settings_url": (ghauth.settings_url(app_info) + "/permissions"
+                                 if app_info else None),
+                "install_url": next((i["url"] for i in creds.describe().get("installations", [])
+                                     if i["account"].lower() == r["owner"].lower()), None),
+            }) from None
+        p = await pipeline_plan(request, r, token, [e.model_dump() for e in body.images])
+        if p.blocked:
+            raise HTTPException(409, p.blocked)
+        try:
+            url = await pipeline.open_pr(request.app.state.gh_client, token, r["owner"],
+                                         r["name"], r["default_branch"], p.files,
+                                         pipeline.pr_body(p))
+        except pipeline.GitHubError as e:
+            why = str(e)
+            if "HTTP 403" in why or "HTTP 404" in why:
+                why += (". The token needs Contents, Pull requests and Workflows read and write"
+                        " on this repo.")
+            raise HTTPException(502, why) from None
+        logging.getLogger("argus").info("pipeline pull request for %s: %s", r["full_name"], url)
+        return {"url": url}
 
     @app.post("/api/github/disconnect")
     async def github_disconnect(request: Request, _: Admin) -> dict:

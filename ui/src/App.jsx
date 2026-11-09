@@ -241,7 +241,8 @@ export default function App() {
       {!locked && data && view === "hosts" && <Hosts data={data.companions} session={session} reload={reload} start={data.start}
                  refs={[...data.jobs.map((j) => `job:${j.name}`), ...data.heartbeats.map((h) => `heartbeat:${h.name}`)]} />}
 
-      {!locked && data && view === "updates" && <Updates updates={data.updates} now={now} focus={focus} />}
+      {!locked && data && view === "updates" && <Updates updates={data.updates} now={now} focus={focus}
+                                                             csrf={session?.signed_in ? session.csrf : undefined} />}
 
       {!locked && data && view === "checks" && (
         <>
