@@ -474,7 +474,9 @@ def test_a_host_that_watches_argus_is_listed_and_told_what_it_needs(client, csrf
 def test_a_watcher_using_argus_own_bot_does_not_count(client, csrf):
     client.app.state.settings.set_secret("alerts.telegram.token", "777:" + "a" * 30)
     me = enroll(client, new_code(client, csrf)["code"], "slayerz-lab").json()
-    report(client, me["token"], watch=WATCH)
+    r, _ = report(client, me["token"], watch=WATCH)
+    assert r.json()["argus_bot"] == "777"  # the public ID only, so the watch command can refuse it
+    assert "a" * 30 not in r.text
     assert client.get("/api/alerts").json()["watchers"][0]["same_bot"] is True
     assert client.get("/api/info").json()["alerts"]["watched"] is None
 

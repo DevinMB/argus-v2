@@ -316,7 +316,22 @@ func (wt *Watcher) State() *WatchState {
 
 // ---- `argus-companion watch`, run by hand as root ----
 
-func watchHere(config, path string, args []string) int {
+// argusBotName is the state file holding the ID of the bot Argus alerts with.
+const argusBotName = "argus-bot"
+
+// rememberArgusBot keeps the latest ID Argus sent, writing only on a change.
+func rememberArgusBot(path, id string) {
+	if old, _ := os.ReadFile(path); string(old) == id {
+		return
+	}
+	if id == "" {
+		_ = os.Remove(path)
+		return
+	}
+	_ = writeFile(path, []byte(id), 0o644)
+}
+
+func watchHere(config, path, argusBot string, args []string) int {
 	if os.Geteuid() != 0 {
 		fmt.Fprintln(os.Stderr, "run this as root: sudo /usr/local/bin/argus-companion watch")
 		return 1
@@ -363,6 +378,12 @@ func watchHere(config, path string, args []string) int {
 	token := readSecret(in)
 	if !strings.Contains(token, ":") {
 		fmt.Fprintln(os.Stderr, "\nthat is not a bot token: it looks like 123456789:AA...")
+		return 1
+	}
+	if own, _ := os.ReadFile(argusBot); len(own) > 0 && (&WatchConfig{Token: token}).BotID() == string(own) {
+		fmt.Fprintln(os.Stderr, "\nthat is the bot Argus already sends its alerts with. If Telegram blocked it,")
+		fmt.Fprintln(os.Stderr, "Argus's alerts and this watcher would go quiet together. Ask @BotFather for a")
+		fmt.Fprintln(os.Stderr, "second bot (/newbot) and run this again with its token.")
 		return 1
 	}
 	bot := newBot(token)

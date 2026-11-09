@@ -160,3 +160,18 @@ func TestTelegramErrorsNeverShowTheToken(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestRememberArgusBot(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "state", argusBotName)
+	rememberArgusBot(p, "123456")
+	if b, _ := os.ReadFile(p); string(b) != "123456" {
+		t.Fatalf("saved %q", b)
+	}
+	if (&WatchConfig{Token: "123456:AAsecret"}).BotID() != "123456" {
+		t.Fatal("a token's bot ID is the part before the colon")
+	}
+	rememberArgusBot(p, "")
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("no bot at Argus: the file goes")
+	}
+}
