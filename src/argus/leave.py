@@ -16,11 +16,11 @@ def outside(settings: Settings, watchers: list[dict] | None = None) -> list[dict
     app = settings.get(ghauth.APP)
     if app:
         org = app.get("owner_type") == "Organization"
-        where = (f"https://github.com/organizations/{app['owner']}/settings/apps/{app['slug']}"
-                 if org else f"https://github.com/settings/apps/{app['slug']}")
+        where = (f"https://github.com/organizations/{app['owner']}/settings/apps/{app['slug']}/advanced"
+                 if org else f"https://github.com/settings/apps/{app['slug']}/advanced")
         out.append({"key": "github_app", "title": f"The GitHub App {app['name']}",
-                    "how": "On GitHub, open its settings, then Advanced, Delete GitHub App. "
-                           "Its installations go with it.", "url": where})
+                    "how": "The link opens its Advanced page on GitHub; press Delete GitHub App "
+                           "at the bottom. Its installations go with it.", "url": where})
     if settings.has_secret(ghauth.TOKEN):
         out.append({"key": "github_token", "title": "The GitHub token you pasted",
                     "how": "Delete it under Settings, Developer settings, Personal access tokens.",
