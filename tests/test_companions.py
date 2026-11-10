@@ -444,7 +444,7 @@ def test_leave_argus_names_what_lives_outside_argus(rt, client, csrf):
     s.set_secret("alerts.telegram.token", "123:abc")
     keys = {o["key"]: o for o in client.get("/api/leave").json()["outside"]}
     assert set(keys) == {"github_app", "deploy_repo", "write_token", "telegram"}
-    assert keys["github_app"]["url"] == "https://github.com/settings/apps/argus-devin"
+    assert keys["github_app"]["url"] == "https://github.com/settings/apps/argus-devin/advanced"
     assert "dependabot.yml" in keys["deploy_repo"]["how"]
 
 
